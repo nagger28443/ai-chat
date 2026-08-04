@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.local
+.DS_Store
+*.log
+.claude/tmp/
+
+shell/git-message.md
+TODO.md
