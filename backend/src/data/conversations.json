@@ -1,0 +1,18 @@
+{
+  "conversations": [
+    {
+      "id": "85fa2c88-64e5-48ae-994d-ad01972003ae",
+      "title": "���ԻỰ",
+      "createdAt": "2026-08-04T02:11:41.009Z",
+      "updatedAt": "2026-08-04T02:11:41.009Z",
+      "messageCount": 0
+    },
+    {
+      "id": "370f59b8-c69d-41fb-b363-370c395f4cee",
+      "title": "Test Conversation",
+      "createdAt": "2026-08-04T02:15:24.514Z",
+      "updatedAt": "2026-08-04T02:15:24.514Z",
+      "messageCount": 0
+    }
+  ]
+}
