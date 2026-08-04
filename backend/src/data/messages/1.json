@@ -1,0 +1,197 @@
+{
+  "conversationId": "1",
+  "messages": [
+    {
+      "id": "d296ff9e-09ee-4368-99c8-6477523f66ca",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T03:11:01.627Z",
+      "status": "completed"
+    },
+    {
+      "id": "342b4676-c455-4110-ac59-c8d5c74949bf",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T03:11:49.363Z",
+      "status": "completed"
+    },
+    {
+      "id": "674ed011-c1c0-4706-95c2-c430d10b2091",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T03:14:53.430Z",
+      "status": "completed"
+    },
+    {
+      "id": "cb1935c4-0c37-415d-bee4-2e7fa387bdd8",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T03:15:44.826Z",
+      "status": "completed"
+    },
+    {
+      "id": "310838db-16bd-4862-b371-ad7efa9a286c",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T03:23:16.765Z",
+      "status": "completed"
+    },
+    {
+      "id": "db9a6832-d754-46fb-bda8-1898b6afe766",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:30:36.891Z",
+      "status": "completed"
+    },
+    {
+      "id": "a61cbce7-69e7-483b-bf1d-f94c63786d2c",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:32:59.645Z",
+      "status": "completed"
+    },
+    {
+      "id": "6c123ec5-90b6-42c5-9e6a-cc2c31ac95e5",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:33:03.849Z",
+      "status": "completed"
+    },
+    {
+      "id": "123f7e49-166d-4b0c-bd6c-8b497718e799",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:33:46.915Z",
+      "status": "completed"
+    },
+    {
+      "id": "993c3ea8-68fe-4aec-92ec-da3550193778",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:34:07.388Z",
+      "status": "completed"
+    },
+    {
+      "id": "2f28de3d-1740-4aff-8ee6-958590908e8f",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:35:04.310Z",
+      "status": "completed"
+    },
+    {
+      "id": "cec236e4-d532-4cd6-9e5b-82696dc5d709",
+      "conversationId": "1",
+      "role": "assistant",
+      "content": "我收到了你的消息。这是一个很有趣的话题。\n\n虽然我是一个模拟的 AI 助手，但我会尽力帮助你。在真实的应用中，这里会连接到像 OpenAI、Claude 这样的 AI 服务，提供更智能的回答。\n\n目前这个 Demo 主要用于学习前后端通信、SSE 流式传输等技术。",
+      "createdAt": "2026-08-04T06:35:08.422Z",
+      "status": "completed"
+    },
+    {
+      "id": "dbd0e3ec-a579-4e47-9b11-eebe1ddb7c05",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:42:56.769Z",
+      "status": "completed"
+    },
+    {
+      "id": "04b9399c-09e1-494a-8198-2ed8027f0bbd",
+      "conversationId": "1",
+      "role": "assistant",
+      "content": "感谢你的分享！\n\n作为学习项目，我模拟了 AI 的回复。在实际应用中，后端会连接到真实的 AI API，接收用户的输入，调用 AI 模型生成回复，然后通过 SSE 流式传输给前端。\n\n你可以通过查看代码来了解这个过程的实现细节。",
+      "createdAt": "2026-08-04T06:43:00.324Z",
+      "status": "completed"
+    },
+    {
+      "id": "0dc708da-53f2-40a7-b22b-07a86abbd9f4",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:43:21.405Z",
+      "status": "completed"
+    },
+    {
+      "id": "8a7b0e2d-2c66-4965-8362-788f65bb5fa6",
+      "conversationId": "1",
+      "role": "assistant",
+      "content": "我收到了你的消息。这是一个很有趣的话题。\n\n虽然我是一个模拟的 AI 助手，但我会尽力帮助你。在真实的应用中，这里会连接到像 OpenAI、Claude 这样的 AI 服务，提供更智能的回答。\n\n目前这个 Demo 主要用于学习前后端通信、SSE 流式传输等技术。",
+      "createdAt": "2026-08-04T06:43:25.510Z",
+      "status": "completed"
+    },
+    {
+      "id": "e6f5fe9e-db90-47a7-97d8-bbf4a7947ded",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:47:36.862Z",
+      "status": "completed"
+    },
+    {
+      "id": "70f624e7-3e63-4771-b25b-355bbc4c7c70",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:47:40.739Z",
+      "status": "completed"
+    },
+    {
+      "id": "6e52788e-cd3d-4726-9737-df5be019764c",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:47:53.701Z",
+      "status": "completed"
+    },
+    {
+      "id": "482fe905-7734-486a-bf45-289de3e5d397",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:48:07.738Z",
+      "status": "completed"
+    },
+    {
+      "id": "7ce19d1f-fc64-4039-9d7c-2d289bdc9bc7",
+      "conversationId": "1",
+      "role": "assistant",
+      "content": "感谢你的分享！\n\n作为学习项目，我模拟了 AI 的回复。在实际应用中，后端会连接到真实的 AI API，接收用户的输入，调用 AI 模型生成回复，然后通过 SSE 流式传输给前端。\n\n你可以通过查看代码来了解这个过程的实现细节。",
+      "createdAt": "2026-08-04T06:48:11.285Z",
+      "status": "completed"
+    },
+    {
+      "id": "f20c51c9-a0e2-4b77-abb7-10626ee729a5",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:48:47.936Z",
+      "status": "completed"
+    },
+    {
+      "id": "cb0b78aa-e5f4-471c-b33d-f24f960f8b8b",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:48:49.478Z",
+      "status": "completed"
+    },
+    {
+      "id": "562ec4e8-fb82-4b33-9d68-21f7389b3843",
+      "conversationId": "1",
+      "role": "user",
+      "content": "2",
+      "createdAt": "2026-08-04T06:48:57.040Z",
+      "status": "completed"
+    }
+  ]
+}

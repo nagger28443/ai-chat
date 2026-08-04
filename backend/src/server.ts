@@ -13,7 +13,27 @@ const PORT = process.env.PORT || 3000;
 
 // 中间件
 app.use(cors());
-app.use(express.json());
+
+// 手动解析 JSON body（解决 Express 5 的 body 解析问题）
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.headers['content-type']?.includes('application/json')) {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      try {
+        req.body = JSON.parse(body);
+      } catch (error) {
+        console.error('Failed to parse JSON body:', error);
+        req.body = {};
+      }
+      next();
+    });
+  } else {
+    next();
+  }
+});
 
 // 健康检查接口
 app.get('/api/health', (_req, res) => {

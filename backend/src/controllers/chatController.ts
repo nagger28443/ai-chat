@@ -1,16 +1,13 @@
-import type { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import { storageService } from '../services/storageService.js';
-import { mockAiService } from '../services/mockAiService.js';
-import type { Message } from '../types/index.js';
+import type { Request, Response } from "express";
+import { v4 as uuidv4 } from "uuid";
+import { storageService } from "../services/storageService.js";
+import { mockAiService } from "../services/mockAiService.js";
+import type { Message } from "../types/index.js";
 
 /**
  * 对话控制器
  */
 export class ChatController {
-  /**
-   * 发送消息并返回流式响应
-   */
   static async sendMessage(req: Request, res: Response) {
     const { conversationId, content } = req.body;
 
@@ -18,21 +15,41 @@ export class ChatController {
     if (!conversationId || !content) {
       res.status(400).json({
         success: false,
-        error: 'Missing required fields',
+        error: "Missing required fields",
       });
       return;
     }
 
     // 设置 SSE 响应头
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    // 禁用 socket 超时，防止长连接被中断
+    if (req.socket) {
+      req.socket.setTimeout(0);
+    }
+
+    // 立即发送响应头
+    res.flushHeaders();
 
     // 监听客户端断开
     let clientDisconnected = false;
-    req.on('close', () => {
+    res.on("close", () => {
       clientDisconnected = true;
+    });
+
+    // 监听响应错误（如 ECONNRESET）
+    res.on("error", (error: NodeJS.ErrnoException) => {
+      // ECONNRESET: 客户端断开连接
+      // EPIPE: 管道断裂
+      if (error.code === "ECONNRESET" || error.code === "EPIPE") {
+        clientDisconnected = true;
+        return;
+      }
+      // 其他错误记录日志
+      console.error("Response error:", error);
     });
 
     try {
@@ -40,10 +57,10 @@ export class ChatController {
       const userMessage: Message = {
         id: uuidv4(),
         conversationId,
-        role: 'user',
+        role: "user",
         content,
         createdAt: new Date().toISOString(),
-        status: 'completed',
+        status: "completed",
       };
 
       const messages = await storageService.getMessages(conversationId);
@@ -52,9 +69,9 @@ export class ChatController {
 
       // 获取 AI 响应
       const responseText = mockAiService.getResponse(content);
+      console.log(responseText);
 
-      let fullContent = '';
-      let chunkCount = 0;
+      let fullContent = "";
 
       // 逐字符发送
       for (let i = 0; i < responseText.length; i++) {
@@ -64,13 +81,21 @@ export class ChatController {
 
         const chunk = responseText[i];
         fullContent += chunk;
-        chunkCount++;
+
+        console.log(fullContent);
 
         const eventData = `event: message\ndata: ${JSON.stringify({ content: chunk })}\n\n`;
-        res.write(eventData);
+
+        // 写入响应，处理可能的写入错误
+        try {
+          res.write(eventData);
+        } catch (writeError) {
+          clientDisconnected = true;
+          break;
+        }
 
         // 模拟打字延迟
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        await new Promise((resolve) => setTimeout(resolve, 20));
       }
 
       // 保存 AI 消息
@@ -78,10 +103,10 @@ export class ChatController {
         const assistantMessage: Message = {
           id: uuidv4(),
           conversationId,
-          role: 'assistant',
+          role: "assistant",
           content: fullContent,
           createdAt: new Date().toISOString(),
-          status: 'completed',
+          status: "completed",
         };
 
         messages.push(assistantMessage);
@@ -96,21 +121,30 @@ export class ChatController {
           conversation.messageCount = messages.length;
 
           if (messages.length === 2) {
-            conversation.title = content.slice(0, 20) + (content.length > 20 ? '...' : '');
+            conversation.title =
+              content.slice(0, 20) + (content.length > 20 ? "..." : "");
           }
 
           await storageService.saveConversations(conversations);
         }
 
         // 发送完成事件
-        res.write('event: done\ndata: {}\n\n');
-        res.end();
+        try {
+          res.write("event: done\ndata: {}\n\n");
+          res.end();
+        } catch (writeError) {
+          // 写入完成事件时连接已断开，忽略错误
+        }
       }
     } catch (error) {
-      console.error('Chat error:', error);
+      console.error("Chat error:", error);
       if (!res.writableEnded) {
-        res.write('event: error\ndata: {"message": "Internal error"}\n\n');
-        res.end();
+        try {
+          res.write('event: error\ndata: {"message": "Internal error"}\n\n');
+          res.end();
+        } catch (writeError) {
+          // 写入错误响应时连接已断开，忽略错误
+        }
       }
     }
   }

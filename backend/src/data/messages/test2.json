@@ -1,0 +1,21 @@
+{
+  "conversationId": "test2",
+  "messages": [
+    {
+      "id": "e1eb556f-7725-4d17-b1dc-35b8d94ab1d2",
+      "conversationId": "test2",
+      "role": "user",
+      "content": "hello",
+      "createdAt": "2026-08-04T06:45:19.869Z",
+      "status": "completed"
+    },
+    {
+      "id": "3c9e0a25-3cfb-4a24-8f27-426a5ac42345",
+      "conversationId": "test2",
+      "role": "assistant",
+      "content": "你好！今天过得怎么样？有什么我可以帮助你的吗？",
+      "createdAt": "2026-08-04T06:45:20.586Z",
+      "status": "completed"
+    }
+  ]
+}

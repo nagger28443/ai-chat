@@ -1,0 +1,13 @@
+{
+  "conversationId": "dbf317cd-371a-4142-be09-11c627dd7121",
+  "messages": [
+    {
+      "id": "1e132196-4e0f-4357-8699-a7e0f167995a",
+      "conversationId": "dbf317cd-371a-4142-be09-11c627dd7121",
+      "role": "user",
+      "content": "hi",
+      "createdAt": "2026-08-04T02:46:36.007Z",
+      "status": "completed"
+    }
+  ]
+}

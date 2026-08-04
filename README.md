@@ -135,11 +135,43 @@ npm run format       # 格式化代码
 ### 后端
 ```bash
 npm run dev          # 启动开发服务器（热重载）
+npm run debug        # 启动调试模式（带 inspect-brk）
 npm run build        # 构建
 npm start            # 启动生产服务器
 npm run lint         # 代码检查
 npm run format       # 格式化代码
 ```
+
+## 🐛 调试配置
+
+项目已配置 VS Code 调试支持，配置文件位于 `.vscode/` 目录。
+
+### 调试方式
+
+1. **Debug Backend** - 直接调试后端（使用 tsx + inspect-brk）
+   - 在 VS Code 中按 F5，选择 "Debug Backend"
+   - 会在第一行代码处断点暂停
+
+2. **Debug Frontend** - 调试前端（Chrome 调试器）
+   - 选择 "Debug Frontend"
+   - 会自动启动 Vite 开发服务器并打开 Chrome
+   - 可以在 TypeScript 源码中设置断点
+
+3. **Debug Backend (Nodemon)** - 带热重载的后端调试
+   - 选择 "Debug Backend (Nodemon)"
+   - 代码修改后自动重启，同时支持断点调试
+
+4. **Debug Full Stack** - 同时调试前后端
+   - 选择 "Debug Full Stack"
+   - 会同时启动后端和前端调试
+
+### 使用方法
+
+1. 在 VS Code 中打开项目
+2. 按 `F5` 或点击调试面板
+3. 从下拉菜单选择要启动的调试配置
+4. 在代码中设置断点（点击行号左侧）
+5. 调试控制台会显示输出
 
 ## 📝 API 接口
 

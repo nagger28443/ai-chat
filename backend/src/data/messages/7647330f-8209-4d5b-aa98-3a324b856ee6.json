@@ -1,0 +1,13 @@
+{
+  "conversationId": "7647330f-8209-4d5b-aa98-3a324b856ee6",
+  "messages": [
+    {
+      "id": "b218779e-b90a-4074-a59c-14a3924a3522",
+      "conversationId": "7647330f-8209-4d5b-aa98-3a324b856ee6",
+      "role": "user",
+      "content": "hello",
+      "createdAt": "2026-08-04T02:51:56.550Z",
+      "status": "completed"
+    }
+  ]
+}

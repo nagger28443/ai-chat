@@ -1,11 +1,19 @@
+import { MessageList } from './MessageList';
+import { InputArea } from './InputArea';
+import { useChat } from '../../hooks/useChat';
 import styles from './ChatWindow.module.css';
 
 export function ChatWindow() {
+  const { messages, isStreaming, sendMessage, stopStreaming } = useChat();
+
   return (
     <div className={styles.chatWindow}>
-      <div className={styles.placeholder}>
-        对话界面（Phase 3 实现）
-      </div>
+      <MessageList messages={messages} isLoading={isStreaming} />
+      <InputArea
+        onSend={sendMessage}
+        onStop={stopStreaming}
+        isLoading={isStreaming}
+      />
     </div>
   );
 }
