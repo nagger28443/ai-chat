@@ -1,0 +1,44 @@
+/* CSS 变量定义 - 主题系统 */
+
+/* 浅色主题（默认） */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --bg-tertiary: #e0e0e0;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --border-color: #e0e0e0;
+  --accent-color: #0066cc;
+  --error-color: #dc3545;
+  --success-color: #28a745;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+
+  /* 布局尺寸 */
+  --header-height: 60px;
+  --sidebar-width: 280px;
+
+  /* 过渡动画 */
+  --transition-duration: 0.3s;
+  --transition-easing: ease-in-out;
+}
+
+/* 深色主题 */
+:root[data-theme='dark'] {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2a2a2a;
+  --bg-tertiary: #3a3a3a;
+  --text-primary: #ffffff;
+  --text-secondary: #b0b0b0;
+  --border-color: #3a3a3a;
+  --accent-color: #4dabf7;
+  --error-color: #ff6b6b;
+  --success-color: #51cf66;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+}
+
+/* 全局过渡效果 */
+* {
+  transition: background-color var(--transition-duration) var(--transition-easing),
+              color var(--transition-duration) var(--transition-easing),
+              border-color var(--transition-duration) var(--transition-easing);
+}
