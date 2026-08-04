@@ -6,7 +6,8 @@ import type { Conversation, Message } from '../types/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// 数据目录放在 backend/data（而不是 backend/src/data），避免 nodemon 监听
+const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const CONVERSATIONS_FILE = path.join(DATA_DIR, 'conversations.json');
 const MESSAGES_DIR = path.join(DATA_DIR, 'messages');
 

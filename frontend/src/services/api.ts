@@ -7,6 +7,16 @@ const API_BASE_URL = '/api';
  * 封装所有后端 API 调用
  */
 class ApiService {
+  constructor() {
+    // 绑定 this，确保 useRequest 等直接调用方法时上下文不丢失
+    this.getConversations = this.getConversations.bind(this);
+    this.createConversation = this.createConversation.bind(this);
+    this.deleteConversation = this.deleteConversation.bind(this);
+    this.getMessages = this.getMessages.bind(this);
+    this.sendMessage = this.sendMessage.bind(this);
+    this.resumeChat = this.resumeChat.bind(this);
+  }
+
   /**
    * 通用请求方法
    */
@@ -103,7 +113,7 @@ class ApiService {
   /**
    * 续传中断的对话（返回 SSE 流）
    */
-  async resumeChat(conversationId: string): Promise<Response> {
+  async resumeChat(conversationId: string, frontendContentLength: number): Promise<Response> {
     const url = `${API_BASE_URL}/chat/resume`;
 
     const response = await fetch(url, {
@@ -111,7 +121,7 @@ class ApiService {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ conversationId }),
+      body: JSON.stringify({ conversationId, frontendContentLength }),
     });
 
     if (!response.ok) {

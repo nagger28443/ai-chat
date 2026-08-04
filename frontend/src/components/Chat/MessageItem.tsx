@@ -32,6 +32,9 @@ export function MessageItem({ message }: MessageItemProps) {
           {message.status === 'streaming' && (
             <span className={styles.cursor}>▊</span>
           )}
+          {message.status === 'generating' && (
+            <span className={styles.interrupted}>「生成中…」</span>
+          )}
           {message.status === 'stopped' && (
             <span className={styles.interrupted}>「已中断」</span>
           )}

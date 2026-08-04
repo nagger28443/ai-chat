@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { storageService } from '../services/storageService.js';
+import { ChatController } from './chatController.js';
 import type { ApiResponse, Conversation } from '../types/index.js';
 
 /**
@@ -121,6 +122,16 @@ export class ConversationController {
       const conversationId = Array.isArray(id) ? id[0] : id;
 
       const messages = await storageService.getMessages(conversationId);
+
+      // 叠加 messageCache 中的生成进度（刷新页面后前端能看到 generating 状态和已生成内容）
+      const cacheEntry = ChatController.getCacheByConversationId(conversationId);
+      if (cacheEntry) {
+        const cachedMsg = messages.find((m) => m.id === cacheEntry.messageId);
+        if (cachedMsg) {
+          cachedMsg.content = cacheEntry.content;
+          cachedMsg.status = 'generating';
+        }
+      }
 
       res.json({
         success: true,

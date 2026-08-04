@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useRef } from 'react';
 import type { Conversation, Message } from '../types';
 import { api } from '../services/api';
+import { useRequest } from 'ahooks';
 
 interface ConversationState {
   conversations: Conversation[];
@@ -39,9 +40,7 @@ function conversationReducer(
       return {
         ...state,
         messages: state.messages.map((msg) =>
-          msg.id === action.payload.id
-            ? { ...msg, ...action.payload.updates }
-            : msg
+          msg.id === action.payload.id ? { ...msg, ...action.payload.updates } : msg
         ),
       };
 
@@ -78,80 +77,76 @@ export function ConversationProvider({ children }: { children: React.ReactNode }
     isLoading: false,
   });
 
-  const loadConversations = useCallback(async () => {
-    try {
-      const conversations = await api.getConversations();
+  // 用 ref 追踪 state，避免 callback 依赖 state 导致循环重建
+  const currentConversationIdRef = useRef<string | null>(null);
+  currentConversationIdRef.current = state.currentConversationId;
+  const conversationsRef = useRef<Conversation[]>([]);
+  conversationsRef.current = state.conversations;
+
+  // ---------- useRequest：会话列表 ----------
+  const { run: fetchConversations } = useRequest(api.getConversations, {
+    manual: true,
+    onSuccess: (conversations) => {
       dispatch({ type: 'SET_CONVERSATIONS', payload: conversations });
-
-      // 如果有会话且当前没有选中的，选择第一个
-      if (conversations.length > 0 && !state.currentConversationId) {
-        await switchConversation(conversations[0].id);
-      } else if (conversations.length === 0) {
-        // 如果没有会话，创建一个
-        await createConversation();
-      }
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
-    }
-  }, [state.currentConversationId]);
-
-  const loadMessages = useCallback(async (conversationId: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    try {
-      const messages = await api.getMessages(conversationId);
-      dispatch({ type: 'SET_MESSAGES', payload: messages });
-    } catch (error) {
-      console.error('Failed to load messages:', error);
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  }, []);
-
-  const createConversation = useCallback(async () => {
-    try {
-      const conversation = await api.createConversation();
-      dispatch({
-        type: 'SET_CONVERSATIONS',
-        payload: [...state.conversations, conversation],
-      });
-      await switchConversation(conversation.id);
-      return conversation;
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
-      throw error;
-    }
-  }, [state.conversations]);
-
-  const deleteConversation = useCallback(
-    async (id: string) => {
-      try {
-        await api.deleteConversation(id);
-        const newConversations = state.conversations.filter((c) => c.id !== id);
-        dispatch({ type: 'SET_CONVERSATIONS', payload: newConversations });
-
-        // 如果删除的是当前会话，切换到第一个
-        if (state.currentConversationId === id) {
-          if (newConversations.length > 0) {
-            await switchConversation(newConversations[0].id);
-          } else {
-            // 如果没有会话了，创建一个新的
-            await createConversation();
-          }
-        }
-      } catch (error) {
-        console.error('Failed to delete conversation:', error);
-        throw error;
-      }
     },
-    [state.conversations, state.currentConversationId, createConversation]
-  );
+  });
+
+  // ---------- useRequest：消息列表 ----------
+  const { run: fetchMessages } = useRequest(api.getMessages, {
+    manual: true,
+    onBefore: () => dispatch({ type: 'SET_LOADING', payload: true }),
+    onSuccess: (messages) => {
+      dispatch({ type: 'SET_MESSAGES', payload: messages });
+    },
+    onFinally: () => dispatch({ type: 'SET_LOADING', payload: false }),
+  });
+
+  // ---------- 业务方法 ----------
 
   const switchConversation = useCallback(
     async (id: string) => {
       dispatch({ type: 'SET_CURRENT_CONVERSATION', payload: id });
-      await loadMessages(id);
+      await fetchMessages(id);
     },
-    [loadMessages]
+    [fetchMessages]
+  );
+
+  const createConversation = useCallback(async (): Promise<Conversation> => {
+    const conversation = await api.createConversation();
+    dispatch({
+      type: 'SET_CONVERSATIONS',
+      payload: [...conversationsRef.current, conversation],
+    });
+    await switchConversation(conversation.id);
+    return conversation;
+  }, [switchConversation]);
+
+  const loadConversations = useCallback(async () => {
+    await fetchConversations();
+  }, [fetchConversations]);
+
+  const loadMessages = useCallback(
+    async (conversationId: string) => {
+      await fetchMessages(conversationId);
+    },
+    [fetchMessages]
+  );
+
+  const deleteConversation = useCallback(
+    async (id: string) => {
+      await api.deleteConversation(id);
+      const newConversations = conversationsRef.current.filter((c) => c.id !== id);
+      dispatch({ type: 'SET_CONVERSATIONS', payload: newConversations });
+
+      if (currentConversationIdRef.current === id) {
+        if (newConversations.length > 0) {
+          await switchConversation(newConversations[0].id);
+        } else {
+          await createConversation();
+        }
+      }
+    },
+    [switchConversation, createConversation]
   );
 
   const addMessage = useCallback((message: Message) => {
@@ -162,10 +157,17 @@ export function ConversationProvider({ children }: { children: React.ReactNode }
     dispatch({ type: 'UPDATE_MESSAGE', payload: { id, updates } });
   }, []);
 
-  // 初始化时加载会话
-  useEffect(() => {
-    loadConversations();
-  }, []);
+  // ---------- 初始化：useRequest 自动处理 StrictMode 双重调用 ----------
+  useRequest(api.getConversations, {
+    onSuccess: async (conversations) => {
+      dispatch({ type: 'SET_CONVERSATIONS', payload: conversations });
+      if (conversations.length > 0 && !currentConversationIdRef.current) {
+        await switchConversation(conversations[0].id);
+      } else if (conversations.length === 0) {
+        await createConversation();
+      }
+    },
+  });
 
   return (
     <ConversationContext.Provider

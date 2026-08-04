@@ -323,69 +323,97 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
 
 ### 2.5 断点续传实现
 
-断点续传功能允许用户在 AI 回复中断后，返回页面时继续生成未完成的内容。
+断点续传功能允许用户在 AI 回复中断后，返回页面时自动继续生成未完成的内容。
+
+**核心架构**：
+
+```
+messageCache（内存 Map）
+  ├── key: conversationId
+  ├── value: CacheEntry { messageId, conversationId, content, status, originalPrompt }
+  └── 生命周期：生成开始时创建 → 生成完成/出错时删除
+
+storage（文件持久化）
+  ├── assistant 消息占位：status='generating'，content=''（1 次写入）
+  └── 生成完成时：status='completed'，content=fullContent（1 次写入）
+```
 
 **核心流程**：
 
 ```
-用户发送消息 → 后端流式返回 → 客户端中断
-                              ↓
-                    后端保存部分内容（status: stopped）
-                              ↓
-                    用户返回页面 → 加载消息历史
-                              ↓
-                    检测到 status: stopped 的消息
-                              ↓
-                    显示"继续生成"按钮
-                              ↓
-                    用户点击 → 调用 POST /api/chat/resume
-                              ↓
-                    后端从中断位置继续返回 SSE 流
-                              ↓
-                    前端追加内容 → 完成
+用户发送消息 → 后端创建占位消息（storage, 1 次写入）
+             → 后端创建 cacheEntry（内存）
+             → 逐字符生成，更新 cacheEntry.content（无 I/O）
+             → 客户端断开？后端继续生成，进度只写 cache
+             → 生成完成 → 一次性写入 storage → 删除 cacheEntry
+
+用户刷新页面 → GET /api/messages → 合并 cache 数据（前端看到 generating + 已生成内容）
+             → 前端检测到 generating 状态 → 自动调用 POST /api/chat/resume
+             → resumeMessage 从 cache 读取进度 → 发送新增内容 → 等待完成
 ```
+
+**三种续传场景**：
+
+| 场景 | cache 状态 | storage 状态 | resumeMessage 行为 |
+|------|-----------|-------------|-------------------|
+| A: 生成仍在进行 | ✅ 命中 | status='generating' | 轮询 cache，转发新内容 |
+| B: 生成已完成 | ❌ 未命中 | status='completed' | 直接补发剩余内容 |
+| C: 后端重启 | ❌ 未命中 | status='generating' | 用 originalPrompt 重新生成并发送 |
 
 **后端实现**：
 
 ```typescript
-// chatController.ts - sendMessage 中的中断处理
-if (clientDisconnected) {
-  // 客户端断开：保存部分消息
-  const partialMessage: Message = {
-    id: assistantMessageId,
-    conversationId,
-    role: "assistant",
-    content: fullContent,
-    createdAt: new Date().toISOString(),
-    status: "stopped",
-    interruptedAt: fullContent.length,
-    originalPrompt: content,
-  };
-  messages.push(partialMessage);
-  await storageService.saveMessages(conversationId, messages);
+// chatController.ts - messageCache 定义
+interface CacheEntry {
+  messageId: string;
+  conversationId: string;
+  content: string;
+  status: 'generating' | 'completed';
+  originalPrompt: string;
+}
+
+static messageCache: Map<string, CacheEntry> = new Map();
+
+// sendMessage - 生成循环中仅更新 cache，不写 storage
+const cacheEntry: CacheEntry = { messageId, conversationId, content: '', status: 'generating', originalPrompt: content };
+ChatController.messageCache.set(conversationId, cacheEntry);
+
+for (let i = 0; i < responseText.length; i++) {
+  cacheEntry.content += responseText[i];  // 仅内存操作
+  if (!clientDisconnected) res.write(eventData);
+  await delay(20);
+}
+
+cacheEntry.status = 'completed';
+// 一次性持久化到 storage
+currentMsg.content = cacheEntry.content;
+currentMsg.status = 'completed';
+await storageService.saveMessages(conversationId, messages);
+ChatController.messageCache.delete(conversationId);
+
+// resumeMessage - 优先从 cache 读取
+const cacheEntry = ChatController.getCacheByConversationId(conversationId);
+if (cacheEntry) {
+  // 场景 A：轮询 cache 转发内容
+} else if (lastMessage.status === 'completed') {
+  // 场景 B：补发剩余内容
+} else {
+  // 场景 C：后端重启，重新生成
 }
 ```
 
+**ConversationController.getMessages 合并 cache**：
+
 ```typescript
-// chatController.ts - resumeMessage 续传方法
-static async resumeMessage(req: Request, res: Response) {
-  // 1. 查找中断的消息
-  const messages = await storageService.getMessages(conversationId);
-  const lastMessage = messages[messages.length - 1];
-
-  if (lastMessage.status !== 'stopped' || !lastMessage.originalPrompt) {
-    res.status(400).json({ error: "No interrupted message to resume" });
-    return;
+// GET /api/conversations/:id/messages 返回时叠加 cache 进度
+const messages = await storageService.getMessages(conversationId);
+const cacheEntry = ChatController.getCacheByConversationId(conversationId);
+if (cacheEntry) {
+  const cachedMsg = messages.find(m => m.id === cacheEntry.messageId);
+  if (cachedMsg) {
+    cachedMsg.content = cacheEntry.content;
+    cachedMsg.status = 'generating';
   }
-
-  // 2. 获取从中断位置开始的响应
-  const remainingText = mockAiService.getResponseFrom(
-    lastMessage.originalPrompt,
-    lastMessage.interruptedAt
-  );
-
-  // 3. 设置 SSE 响应并逐字符发送
-  // 4. 完成后更新消息状态为 completed
 }
 ```
 
@@ -397,38 +425,61 @@ static async resumeMessage(req: Request, res: Response) {
 // mockAiService.ts
 private getDeterministicResponse(userMessage: string): string {
   const hash = this.simpleHash(userMessage);
-  // 使用 hash 选择模板，而非随机
   return RESPONSE_TEMPLATES.category[hash % templates.length];
-}
-
-getResponseFrom(userMessage: string, startPosition: number): string {
-  const fullResponse = this.getDeterministicResponse(userMessage);
-  return fullResponse.slice(startPosition);
 }
 ```
 
-**前端实现**：
+**前端自动续传**：
 
 ```typescript
-// useChat.ts - 检测中断消息
-const canResume = useMemo(() => {
-  return state.messages.some(
-    (m) => m.role === 'assistant' && m.status === 'stopped'
-  );
-}, [state.messages]);
+// useChat.ts - 用 ref 同步追踪内容，避免 state 竞态
+// resume 时字符瞬间到达（内存读取无延迟），多个 onMessage 在同一次 React 渲染前触发
+// 如果从 state.messages 读取当前内容，后续字符会覆盖前面的（读到旧 state）
+const contentRef = useRef('');
 
-// useChat.ts - 续传方法
-const resumeConversation = useCallback(async () => {
-  const interruptedMsg = state.messages.find(
-    (m) => m.role === 'assistant' && m.status === 'stopped'
-  );
-  if (!interruptedMsg) return;
+const onMessage = useMemoizedFn((content) => {
+  contentRef.current += content;  // ref 同步更新，无延迟
+  updateMessage(msgId, { content: contentRef.current, status: 'streaming' });
+});
 
-  setStreamingMessageId(interruptedMsg.id);
-  setIsStreaming(true);
-  updateMessage(interruptedMsg.id, { status: 'streaming' });
-  await resumeStream(state.currentConversationId);
-}, [state.currentConversationId, state.messages, ...]);
+// resume 时初始化 contentRef 为前端已有内容
+contentRef.current = interruptedMsg.content;
+await resumeStream(conversationId, interruptedMsg.content.length);
+
+// 自动续传检测：监听 isLoading 从 true→false 的跳变
+// 精确对应 loadMessages 完成的时刻，只触发一次，不依赖 setTimeout
+const prevIsLoadingRef = useRef(state.isLoading);
+useEffect(() => {
+  const wasLoading = prevIsLoadingRef.current;
+  prevIsLoadingRef.current = state.isLoading;
+  if (!wasLoading || state.isLoading) return; // 仅在 true→false 时继续
+  // 检查 messagesRef 中是否有 generating/stopped 消息 → 触发 resumeConversation
+}, [state.isLoading]);
+```
+
+**ConversationContext 初始化（useRequest）**：
+
+```typescript
+// 用 ahooks 的 useRequest 管理数据请求
+// 自动处理：loading 状态、StrictMode 双重调用、unmount 取消
+useRequest(api.getConversations, {
+  onSuccess: async (conversations) => {
+    dispatch({ type: 'SET_CONVERSATIONS', payload: conversations });
+    if (conversations.length > 0 && !currentConversationIdRef.current) {
+      await switchConversation(conversations[0].id);
+    } else if (conversations.length === 0) {
+      await createConversation();
+    }
+  },
+});
+
+// 手动触发的请求（loadMessages、loadConversations 等）
+const { run: fetchMessages } = useRequest(api.getMessages, {
+  manual: true,
+  onBefore: () => dispatch({ type: 'SET_LOADING', payload: true }),
+  onSuccess: (messages) => dispatch({ type: 'SET_MESSAGES', payload: messages }),
+  onFinally: () => dispatch({ type: 'SET_LOADING', payload: false }),
+});
 ```
 
 ### 2.6 主题系统实现
@@ -1059,28 +1110,30 @@ export class ChatController {
 
 ### 3.7 断点续传 API
 
-**新增端点**：`POST /api/chat/resume`
+**端点**：`POST /api/chat/resume`
 
 **请求体**：
 ```json
 {
-  "conversationId": "uuid-string"
+  "conversationId": "uuid-string",
+  "frontendContentLength": 15
 }
 ```
 
+- `frontendContentLength`：前端当前已有的内容长度，后端只发送此位置之后的增量内容
+
 **响应**：SSE 流式响应，格式与 `/api/chat` 相同
 
-**处理流程**：
-1. 查找会话最后一条消息
-2. 验证消息状态为 `stopped` 且包含 `originalPrompt` 和 `interruptedAt`
-3. 将消息状态更新为 `streaming`
-4. 调用 `mockAiService.getResponseFrom(originalPrompt, interruptedAt)` 获取剩余内容
-5. 逐字符发送 SSE 事件
-6. 完成后更新消息状态为 `completed`，清除 `interruptedAt` 和 `originalPrompt`
+**处理流程**（三种场景）：
+1. **场景 A（cache 命中）**：生成仍在进行中，从 messageCache 轮询 `frontendContentLength` 之后的新内容并转发
+2. **场景 B（已完成）**：消息已 completed，直接发送 `frontendContentLength` 之后的内容
+3. **场景 C（后端重启）**：消息仍为 generating 但 cache 丢失，用 `originalPrompt` 重新生成完整响应，只发送 `frontendContentLength` 之后的内容
 
 **错误处理**：
-- `400` - 无可恢复的中断消息
-- 续传过程中再次中断，更新 `interruptedAt`，可再次续传
+- `400` - 缺少 conversationId
+- `event: error` - 无可恢复的消息（最后一条不是 assistant 或没有 originalPrompt）
+
+**GET /api/conversations/:id/messages** 返回时会叠加 messageCache 中的生成进度，确保刷新后的前端能看到 `status: 'generating'` 和已生成的内容。
 
 ---
 

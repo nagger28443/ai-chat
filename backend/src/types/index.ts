@@ -14,7 +14,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
-  status?: 'sending' | 'streaming' | 'completed' | 'stopped' | 'error';
+  status?: 'sending' | 'streaming' | 'generating' | 'completed' | 'stopped' | 'error';
   error?: string;
   /** 中断位置（已生成的字符数），用于断点续传 */
   interruptedAt?: number;

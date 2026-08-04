@@ -6,5 +6,7 @@ dist/
 *.log
 .claude/tmp/
 
+backend/data/
+
 shell/git-message.md
 TODO.md

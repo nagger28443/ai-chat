@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon",
-    "dev:direct": "tsx src/server.ts",
+    "dev:watch": "nodemon",
     "debug": "nodemon --exec \"tsx --inspect src/server.ts\"",
     "build": "tsc",
     "start": "node dist/server.js",
