@@ -16,6 +16,10 @@ export interface Message {
   createdAt: string;
   status?: 'sending' | 'streaming' | 'completed' | 'stopped' | 'error';
   error?: string;
+  /** 中断位置（已生成的字符数），用于断点续传 */
+  interruptedAt?: number;
+  /** 原始用户输入，用于断点续传时重新获取 AI 响应 */
+  originalPrompt?: string;
 }
 
 // API 响应类型

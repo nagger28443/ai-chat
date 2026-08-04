@@ -173,6 +173,10 @@ export interface Message {
   createdAt: string;
   status?: 'sending' | 'streaming' | 'completed' | 'stopped' | 'error';
   error?: string;
+  /** 中断位置（已生成的字符数），用于断点续传 */
+  interruptedAt?: number;
+  /** 原始用户输入，用于断点续传时重新获取 AI 响应 */
+  originalPrompt?: string;
 }
 
 // 主题类型
@@ -317,7 +321,117 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
 }
 ```
 
-### 2.5 主题系统实现
+### 2.5 断点续传实现
+
+断点续传功能允许用户在 AI 回复中断后，返回页面时继续生成未完成的内容。
+
+**核心流程**：
+
+```
+用户发送消息 → 后端流式返回 → 客户端中断
+                              ↓
+                    后端保存部分内容（status: stopped）
+                              ↓
+                    用户返回页面 → 加载消息历史
+                              ↓
+                    检测到 status: stopped 的消息
+                              ↓
+                    显示"继续生成"按钮
+                              ↓
+                    用户点击 → 调用 POST /api/chat/resume
+                              ↓
+                    后端从中断位置继续返回 SSE 流
+                              ↓
+                    前端追加内容 → 完成
+```
+
+**后端实现**：
+
+```typescript
+// chatController.ts - sendMessage 中的中断处理
+if (clientDisconnected) {
+  // 客户端断开：保存部分消息
+  const partialMessage: Message = {
+    id: assistantMessageId,
+    conversationId,
+    role: "assistant",
+    content: fullContent,
+    createdAt: new Date().toISOString(),
+    status: "stopped",
+    interruptedAt: fullContent.length,
+    originalPrompt: content,
+  };
+  messages.push(partialMessage);
+  await storageService.saveMessages(conversationId, messages);
+}
+```
+
+```typescript
+// chatController.ts - resumeMessage 续传方法
+static async resumeMessage(req: Request, res: Response) {
+  // 1. 查找中断的消息
+  const messages = await storageService.getMessages(conversationId);
+  const lastMessage = messages[messages.length - 1];
+
+  if (lastMessage.status !== 'stopped' || !lastMessage.originalPrompt) {
+    res.status(400).json({ error: "No interrupted message to resume" });
+    return;
+  }
+
+  // 2. 获取从中断位置开始的响应
+  const remainingText = mockAiService.getResponseFrom(
+    lastMessage.originalPrompt,
+    lastMessage.interruptedAt
+  );
+
+  // 3. 设置 SSE 响应并逐字符发送
+  // 4. 完成后更新消息状态为 completed
+}
+```
+
+**mockAiService 确定性响应**：
+
+为确保续传内容一致，`mockAiService` 使用确定性算法：相同输入始终返回相同输出。
+
+```typescript
+// mockAiService.ts
+private getDeterministicResponse(userMessage: string): string {
+  const hash = this.simpleHash(userMessage);
+  // 使用 hash 选择模板，而非随机
+  return RESPONSE_TEMPLATES.category[hash % templates.length];
+}
+
+getResponseFrom(userMessage: string, startPosition: number): string {
+  const fullResponse = this.getDeterministicResponse(userMessage);
+  return fullResponse.slice(startPosition);
+}
+```
+
+**前端实现**：
+
+```typescript
+// useChat.ts - 检测中断消息
+const canResume = useMemo(() => {
+  return state.messages.some(
+    (m) => m.role === 'assistant' && m.status === 'stopped'
+  );
+}, [state.messages]);
+
+// useChat.ts - 续传方法
+const resumeConversation = useCallback(async () => {
+  const interruptedMsg = state.messages.find(
+    (m) => m.role === 'assistant' && m.status === 'stopped'
+  );
+  if (!interruptedMsg) return;
+
+  setStreamingMessageId(interruptedMsg.id);
+  setIsStreaming(true);
+  updateMessage(interruptedMsg.id, { status: 'streaming' });
+  await resumeStream(state.currentConversationId);
+}, [state.currentConversationId, state.messages, ...]);
+```
+
+### 2.6 主题系统实现
 
 ```typescript
 // src/context/ThemeContext.tsx
@@ -413,7 +527,7 @@ export function useTheme() {
 }
 ```
 
-### 2.6 状态管理方案
+### 2.7 状态管理方案
 
 使用 React Context + useReducer 进行状态管理，避免引入额外的状态管理库。
 
@@ -942,6 +1056,31 @@ export class ChatController {
   }
 }
 ```
+
+### 3.7 断点续传 API
+
+**新增端点**：`POST /api/chat/resume`
+
+**请求体**：
+```json
+{
+  "conversationId": "uuid-string"
+}
+```
+
+**响应**：SSE 流式响应，格式与 `/api/chat` 相同
+
+**处理流程**：
+1. 查找会话最后一条消息
+2. 验证消息状态为 `stopped` 且包含 `originalPrompt` 和 `interruptedAt`
+3. 将消息状态更新为 `streaming`
+4. 调用 `mockAiService.getResponseFrom(originalPrompt, interruptedAt)` 获取剩余内容
+5. 逐字符发送 SSE 事件
+6. 完成后更新消息状态为 `completed`，清除 `interruptedAt` 和 `originalPrompt`
+
+**错误处理**：
+- `400` - 无可恢复的中断消息
+- 续传过程中再次中断，更新 `interruptedAt`，可再次续传
 
 ---
 

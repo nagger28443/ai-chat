@@ -99,6 +99,27 @@ class ApiService {
 
     return response;
   }
+
+  /**
+   * 续传中断的对话（返回 SSE 流）
+   */
+  async resumeChat(conversationId: string): Promise<Response> {
+    const url = `${API_BASE_URL}/chat/resume`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ conversationId }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response;
+  }
 }
 
 export const api = new ApiService();

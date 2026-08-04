@@ -1,0 +1,21 @@
+{
+  "conversationId": "cf69aad6-c92a-4cbf-9edc-9a7d935e9964",
+  "messages": [
+    {
+      "id": "aec0011a-79fe-4112-948b-9bbda21dec5a",
+      "conversationId": "cf69aad6-c92a-4cbf-9edc-9a7d935e9964",
+      "role": "user",
+      "content": "hello",
+      "createdAt": "2026-08-04T07:03:54.304Z",
+      "status": "completed"
+    },
+    {
+      "id": "9de2353c-d4d2-4da3-8e8e-c6c111e41476",
+      "conversationId": "cf69aad6-c92a-4cbf-9edc-9a7d935e9964",
+      "role": "assistant",
+      "content": "你好！今天过得怎么样？有什么我可以帮助你的吗？",
+      "createdAt": "2026-08-04T07:03:55.018Z",
+      "status": "completed"
+    }
+  ]
+}

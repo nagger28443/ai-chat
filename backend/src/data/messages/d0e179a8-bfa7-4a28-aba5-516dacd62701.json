@@ -320,6 +320,22 @@
       "content": "我收到了你的消息。这是一个很有趣的话题。\n\n虽然我是一个模拟的 AI 助手，但我会尽力帮助你。在真实的应用中，这里会连接到像 OpenAI、Claude 这样的 AI 服务，提供更智能的回答。\n\n目前这个 Demo 主要用于学习前后端通信、SSE 流式传输等技术。",
       "createdAt": "2026-08-04T06:53:22.426Z",
       "status": "completed"
+    },
+    {
+      "id": "1d0ab40d-998c-4497-85aa-8277ea46b743",
+      "conversationId": "d0e179a8-bfa7-4a28-aba5-516dacd62701",
+      "role": "user",
+      "content": "1",
+      "createdAt": "2026-08-04T07:02:38.296Z",
+      "status": "completed"
+    },
+    {
+      "id": "f8112039-1c4e-4fbc-a621-9e7bf452b648",
+      "conversationId": "d0e179a8-bfa7-4a28-aba5-516dacd62701",
+      "role": "assistant",
+      "content": "感谢你的分享！\n\n作为学习项目，我模拟了 AI 的回复。在实际应用中，后端会连接到真实的 AI API，接收用户的输入，调用 AI 模型生成回复，然后通过 SSE 流式传输给前端。\n\n你可以通过查看代码来了解这个过程的实现细节。",
+      "createdAt": "2026-08-04T07:02:39.139Z",
+      "status": "completed"
     }
   ]
 }

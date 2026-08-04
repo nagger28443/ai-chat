@@ -32,7 +32,30 @@ class MockAiService {
    * 根据用户输入获取回复
    */
   getResponse(userMessage: string): string {
+    return this.getResponseFrom(userMessage, 0);
+  }
+
+  /**
+   * 根据用户输入获取回复，从指定位置开始
+   * @param userMessage 用户输入
+   * @param startPosition 开始位置（用于断点续传）
+   * @returns 从 startPosition 开始的响应文本
+   */
+  getResponseFrom(userMessage: string, startPosition: number = 0): string {
+    const fullResponse = this.getDeterministicResponse(userMessage);
+    if (startPosition >= fullResponse.length) {
+      return '';
+    }
+    return fullResponse.slice(startPosition);
+  }
+
+  /**
+   * 确定性响应：相同输入始终返回相同输出
+   * 使用输入字符串的哈希值选择模板
+   */
+  private getDeterministicResponse(userMessage: string): string {
     const lowerMessage = userMessage.toLowerCase();
+    const hash = this.simpleHash(userMessage);
 
     // 问候语
     if (
@@ -41,7 +64,7 @@ class MockAiService {
       lowerMessage.includes('hello') ||
       lowerMessage.includes('嗨')
     ) {
-      return this.randomPick(RESPONSE_TEMPLATES.greeting);
+      return RESPONSE_TEMPLATES.greeting[hash % RESPONSE_TEMPLATES.greeting.length];
     }
 
     // 代码相关
@@ -51,12 +74,12 @@ class MockAiService {
       lowerMessage.includes('编程') ||
       lowerMessage.includes('程序')
     ) {
-      return this.randomPick(RESPONSE_TEMPLATES.code);
+      return RESPONSE_TEMPLATES.code[hash % RESPONSE_TEMPLATES.code.length];
     }
 
     // Markdown 相关
     if (lowerMessage.includes('markdown') || lowerMessage.includes('格式')) {
-      return this.randomPick(RESPONSE_TEMPLATES.markdown);
+      return RESPONSE_TEMPLATES.markdown[hash % RESPONSE_TEMPLATES.markdown.length];
     }
 
     // 问题相关
@@ -68,18 +91,24 @@ class MockAiService {
       lowerMessage.includes('?') ||
       lowerMessage.includes('？')
     ) {
-      return this.randomPick(RESPONSE_TEMPLATES.question);
+      return RESPONSE_TEMPLATES.question[hash % RESPONSE_TEMPLATES.question.length];
     }
 
     // 默认回复
-    return this.randomPick(RESPONSE_TEMPLATES.default);
+    return RESPONSE_TEMPLATES.default[hash % RESPONSE_TEMPLATES.default.length];
   }
 
   /**
-   * 从数组中随机选择一个元素
+   * 简单字符串哈希
    */
-  private randomPick<T>(arr: T[]): T {
-    return arr[Math.floor(Math.random() * arr.length)];
+  private simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash);
   }
 }
 

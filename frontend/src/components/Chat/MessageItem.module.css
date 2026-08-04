@@ -82,3 +82,18 @@
     opacity: 0;
   }
 }
+
+.interrupted {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.error {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--error-color);
+}
