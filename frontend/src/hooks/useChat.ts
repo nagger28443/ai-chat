@@ -1,22 +1,45 @@
 import { useState, useEffect, useRef } from 'react';
+import { useAtom, useSetAtom } from 'jotai';
 import { v4 as uuidv4 } from 'uuid';
-import { useConversation } from '../context/ConversationContext';
 import { useSSE } from './useSSE';
 import type { Message } from '../types';
 import { useMemoizedFn } from 'ahooks';
+import {
+  messagesAtom,
+  currentConversationIdAtom,
+  isLoadingAtom,
+} from '../atoms/conversation';
+import {
+  addMessageAtom,
+  updateMessageAtom,
+  loadConversationsAtom,
+  initConversationsAtom,
+} from '../atoms/actions';
 
 /**
  * Chat Hook - 管理对话逻辑
+ * 使用 jotai atoms 替代 Context
  */
 export function useChat() {
-  const { state, addMessage, updateMessage, loadConversations } = useConversation();
+  // 读取 atoms
+  const [messages] = useAtom(messagesAtom);
+  const [currentConversationId] = useAtom(currentConversationIdAtom);
+  const [isLoading] = useAtom(isLoadingAtom);
+
+  // 写入 atoms
+  const addMessage = useSetAtom(addMessageAtom);
+  const updateMessage = useSetAtom(updateMessageAtom);
+  const loadConversations = useSetAtom(loadConversationsAtom);
+  const initConversations = useSetAtom(initConversationsAtom);
+
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+
   // 记录已安排自动续传的会话 ID
   const scheduledResumeRef = useRef<string | null>(null);
   // 用 ref 保存最新的 messages，避免 useEffect 闭包过期问题
-  const messagesRef = useRef<Message[]>(state.messages);
-  messagesRef.current = state.messages;
+  const messagesRef = useRef<Message[]>(messages);
+  messagesRef.current = messages;
   // 用 ref 保存最新的 isStreaming
   const isStreamingRef = useRef(isStreaming);
   isStreamingRef.current = isStreaming;
@@ -24,18 +47,24 @@ export function useChat() {
   const streamingMessageIdRef = useRef<string | null>(null);
   streamingMessageIdRef.current = streamingMessageId;
   // 用 ref 同步追踪流式消息内容，避免 state 未更新时的竞态
-  // 正常对话每字符有 20ms 延迟，React 来得及渲染；但 resume 时字符瞬间到达，
-  // 多个 onMessage 在同一次渲染前触发，state.messages 还是旧值，导致字符覆盖
   const contentRef = useRef('');
+
+  // 初始化：加载会话列表
+  useEffect(() => {
+    initConversations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onMessage = useMemoizedFn((content) => {
     const msgId = streamingMessageIdRef.current;
     if (msgId) {
-      // 从 ref 读取最新累积内容，而非 state（state 可能还未更新）
       contentRef.current += content;
-      updateMessage(msgId, {
-        content: contentRef.current,
-        status: 'streaming',
+      updateMessage({
+        id: msgId,
+        updates: {
+          content: contentRef.current,
+          status: 'streaming',
+        },
       });
     }
   });
@@ -43,8 +72,9 @@ export function useChat() {
   const onDone = useMemoizedFn(() => {
     const msgId = streamingMessageIdRef.current;
     if (msgId) {
-      updateMessage(msgId, {
-        status: 'completed',
+      updateMessage({
+        id: msgId,
+        updates: { status: 'completed' },
       });
     }
     setIsStreaming(false);
@@ -57,9 +87,9 @@ export function useChat() {
   const onError = useMemoizedFn((error) => {
     const msgId = streamingMessageIdRef.current;
     if (msgId) {
-      updateMessage(msgId, {
-        status: 'error',
-        error,
+      updateMessage({
+        id: msgId,
+        updates: { status: 'error', error },
       });
     }
     setIsStreaming(false);
@@ -74,12 +104,12 @@ export function useChat() {
   });
 
   const sendMessage = useMemoizedFn(async (content: string) => {
-    if (!state.currentConversationId || isStreamingRef.current) return;
+    if (!currentConversationId || isStreamingRef.current) return;
 
     // 添加用户消息
     const userMessage: Message = {
       id: uuidv4(),
-      conversationId: state.currentConversationId,
+      conversationId: currentConversationId,
       role: 'user',
       content,
       createdAt: new Date().toISOString(),
@@ -90,7 +120,7 @@ export function useChat() {
     // 添加 AI 消息（占位）
     const assistantMessage: Message = {
       id: uuidv4(),
-      conversationId: state.currentConversationId,
+      conversationId: currentConversationId,
       role: 'assistant',
       content: '',
       createdAt: new Date().toISOString(),
@@ -100,18 +130,17 @@ export function useChat() {
 
     setStreamingMessageId(assistantMessage.id);
     setIsStreaming(true);
-    contentRef.current = ''; // 重置内容追踪
+    contentRef.current = '';
 
     // 发送 SSE 请求
-    await sendSSERequest(state.currentConversationId, content);
+    await sendSSERequest(currentConversationId, content);
   });
 
   /**
    * 续传中断的对话
    */
   const resumeConversation = useMemoizedFn(async () => {
-    const currentConvId = state.currentConversationId;
-    if (!currentConvId || isStreamingRef.current) return;
+    if (!currentConversationId || isStreamingRef.current) return;
 
     // 找到中断的消息
     const interruptedMsg = messagesRef.current.find(
@@ -120,45 +149,38 @@ export function useChat() {
 
     if (!interruptedMsg) return;
 
-    // 设置当前流式消息 ID
     setStreamingMessageId(interruptedMsg.id);
     setIsStreaming(true);
 
     // 将 contentRef 同步为前端已有的内容
-    // 后端只会发送增量内容（从 frontendContentLength 开始），onMessage 追加到 contentRef
     contentRef.current = interruptedMsg.content;
 
-    // 更新消息状态为 streaming
-    updateMessage(interruptedMsg.id, {
-      status: 'streaming',
+    updateMessage({
+      id: interruptedMsg.id,
+      updates: { status: 'streaming' },
     });
 
     // 传入前端当前内容长度，后端只发送增量内容
-    await resumeStream(currentConvId, interruptedMsg.content.length);
+    await resumeStream(currentConversationId, interruptedMsg.content.length);
   });
 
   /**
    * 自动续传：检测消息加载完成（isLoading true→false）后检查中断消息
-   *
-   * 用 ref 追踪上一次 isLoading 值，仅在 true→false 跳变时触发检查
-   * 这精确对应 loadMessages 完成的时刻，不会重复触发
    */
-  const prevIsLoadingRef = useRef(state.isLoading);
+  const prevIsLoadingRef = useRef(isLoading);
 
   useEffect(() => {
     const wasLoading = prevIsLoadingRef.current;
-    prevIsLoadingRef.current = state.isLoading;
+    prevIsLoadingRef.current = isLoading;
 
     // 仅在 isLoading 从 true 变为 false 时检查
-    if (!wasLoading || state.isLoading) return;
+    if (!wasLoading || isLoading) return;
 
-    const conversationId = state.currentConversationId;
-    if (!conversationId) return;
+    if (!currentConversationId) return;
     if (isStreamingRef.current) return;
 
-    // 防止重复触发
-    if (scheduledResumeRef.current === conversationId) return;
-    scheduledResumeRef.current = conversationId;
+    if (scheduledResumeRef.current === currentConversationId) return;
+    scheduledResumeRef.current = currentConversationId;
 
     const interruptedMsg = messagesRef.current.find(
       (m) => m.role === 'assistant' && (m.status === 'generating' || m.status === 'stopped')
@@ -167,14 +189,15 @@ export function useChat() {
     if (interruptedMsg) {
       resumeConversation();
     }
-  }, [state.isLoading]); // 只依赖 isLoading
+  }, [isLoading]);
 
   const stopStreaming = useMemoizedFn(() => {
     abort();
     const msgId = streamingMessageIdRef.current;
     if (msgId) {
-      updateMessage(msgId, {
-        status: 'stopped',
+      updateMessage({
+        id: msgId,
+        updates: { status: 'stopped' },
       });
     }
     setIsStreaming(false);
@@ -183,7 +206,7 @@ export function useChat() {
   });
 
   return {
-    messages: state.messages,
+    messages,
     isStreaming,
     sendMessage,
     stopStreaming,

@@ -137,7 +137,7 @@ data: {"message": "错误信息"}
 - GET messages 接口自动合并缓存数据，前端刷新后即可看到 generating 状态和已生成内容
 - 前端监听 isLoading 跳变（true→false）检测消息加载完成，精确触发自动续传
 - 前端用 contentRef 同步追踪内容，避免 resume 时高速字符到达导致的 state 竞态
-- ConversationContext 使用 ahooks useRequest 管理数据请求，自动处理 loading、取消、StrictMode
+- 状态管理使用 jotai 原子化方案，无 Provider 嵌套，按需订阅
 - 支持后端重启恢复：检测到 storage 中 generating 但缓存丢失时，重新生成内容
 - 消息对象新增 `originalPrompt`（原始输入）字段用于恢复
 

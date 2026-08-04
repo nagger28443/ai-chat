@@ -127,9 +127,11 @@ frontend/
 │   │   ├── useConversations.ts
 │   │   ├── useTheme.ts
 │   │   └── useSSE.ts
+│   ├── atoms/
+│   │   ├── conversation.ts
+│   │   └── actions.ts
 │   ├── context/
-│   │   ├── ThemeContext.tsx
-│   │   └── ConversationContext.tsx
+│   │   └── ThemeContext.tsx
 │   ├── services/
 │   │   └── api.ts
 │   ├── types/
@@ -578,165 +580,91 @@ export function useTheme() {
 }
 ```
 
-### 2.7 状态管理方案
+### 2.7 状态管理方案（jotai）
 
-使用 React Context + useReducer 进行状态管理，避免引入额外的状态管理库。
+使用 jotai 原子化状态管理，替代 React Context + useReducer。
 
 ```typescript
-// src/context/ConversationContext.tsx
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+// src/atoms/conversation.ts - 基础 atoms
+import { atom } from 'jotai';
 import type { Conversation, Message } from '../types';
+
+export const conversationsAtom = atom<Conversation[]>([]);
+export const currentConversationIdAtom = atom<string | null>(null);
+export const messagesAtom = atom<Message[]>([]);
+export const isLoadingAtom = atom<boolean>(false);
+
+// 派生 atom：当前会话对象
+export const currentConversationAtom = atom((get) => {
+  const id = get(currentConversationIdAtom);
+  if (!id) return null;
+  return get(conversationsAtom).find((c) => c.id === id) ?? null;
+});
+
+// src/atoms/actions.ts - 操作 atoms
+import { atom } from 'jotai';
+import { conversationsAtom, currentConversationIdAtom, messagesAtom, isLoadingAtom } from './conversation';
 import { api } from '../services/api';
+import type { Message } from '../types';
 
-interface ConversationState {
-  conversations: Conversation[];
-  currentConversationId: string | null;
-  messages: Message[];
-  isLoading: boolean;
-}
+// 加载会话列表
+export const loadConversationsAtom = atom(null, async (_get, set) => {
+  const conversations = await api.getConversations();
+  set(conversationsAtom, conversations);
+});
 
-type ConversationAction =
-  | { type: 'SET_CONVERSATIONS'; payload: Conversation[] }
-  | { type: 'SET_CURRENT_CONVERSATION'; payload: string | null }
-  | { type: 'SET_MESSAGES'; payload: Message[] }
-  | { type: 'ADD_MESSAGE'; payload: Message }
-  | { type: 'UPDATE_MESSAGE'; payload: { id: string; updates: Partial<Message> } }
-  | { type: 'SET_LOADING'; payload: boolean };
+// 添加消息（本地操作）
+export const addMessageAtom = atom(null, (get, set, message: Message) => {
+  set(messagesAtom, [...get(messagesAtom), message]);
+});
 
-function conversationReducer(
-  state: ConversationState,
-  action: ConversationAction
-): ConversationState {
-  switch (action.type) {
-    case 'SET_CONVERSATIONS':
-      return { ...state, conversations: action.payload };
-    
-    case 'SET_CURRENT_CONVERSATION':
-      return { ...state, currentConversationId: action.payload };
-    
-    case 'SET_MESSAGES':
-      return { ...state, messages: action.payload };
-    
-    case 'ADD_MESSAGE':
-      return { ...state, messages: [...state.messages, action.payload] };
-    
-    case 'UPDATE_MESSAGE':
-      return {
-        ...state,
-        messages: state.messages.map(msg =>
-          msg.id === action.payload.id
-            ? { ...msg, ...action.payload.updates }
-            : msg
-        ),
-      };
-    
-    case 'SET_LOADING':
-      return { ...state, isLoading: action.payload };
-    
-    default:
-      return state;
+// 更新消息（本地操作）
+export const updateMessageAtom = atom(
+  null,
+  (get, set, payload: { id: string; updates: Partial<Message> }) => {
+    set(
+      messagesAtom,
+      get(messagesAtom).map((msg) =>
+        msg.id === payload.id ? { ...msg, ...payload.updates } : msg
+      )
+    );
   }
-}
+);
 
-interface ConversationContextType {
-  state: ConversationState;
-  dispatch: React.Dispatch<ConversationAction>;
-  loadConversations: () => Promise<void>;
-  loadMessages: (conversationId: string) => Promise<void>;
-  createConversation: () => Promise<Conversation>;
-  deleteConversation: (id: string) => Promise<void>;
-  switchConversation: (id: string) => Promise<void>;
-}
-
-const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
-
-export function ConversationProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(conversationReducer, {
-    conversations: [],
-    currentConversationId: null,
-    messages: [],
-    isLoading: false,
-  });
-
-  const loadConversations = async () => {
-    try {
-      const conversations = await api.getConversations();
-      dispatch({ type: 'SET_CONVERSATIONS', payload: conversations });
-      
-      // 如果有会话且当前没有选中的，选择第一个
-      if (conversations.length > 0 && !state.currentConversationId) {
-        await switchConversation(conversations[0].id);
-      }
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
-    }
-  };
-
-  const loadMessages = async (conversationId: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    try {
-      const messages = await api.getMessages(conversationId);
-      dispatch({ type: 'SET_MESSAGES', payload: messages });
-    } catch (error) {
-      console.error('Failed to load messages:', error);
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  };
-
-  const createConversation = async () => {
-    const conversation = await api.createConversation();
-    dispatch({ type: 'SET_CONVERSATIONS', payload: [...state.conversations, conversation] });
-    await switchConversation(conversation.id);
-    return conversation;
-  };
-
-  const deleteConversation = async (id: string) => {
-    await api.deleteConversation(id);
-    const newConversations = state.conversations.filter(c => c.id !== id);
-    dispatch({ type: 'SET_CONVERSATIONS', payload: newConversations });
-    
-    // 如果删除的是当前会话，切换到第一个
-    if (state.currentConversationId === id) {
-      if (newConversations.length > 0) {
-        await switchConversation(newConversations[0].id);
-      } else {
-        const newConv = await createConversation();
-        dispatch({ type: 'SET_MESSAGES', payload: [] });
-      }
-    }
-  };
-
-  const switchConversation = async (id: string) => {
-    dispatch({ type: 'SET_CURRENT_CONVERSATION', payload: id });
-    await loadMessages(id);
-  };
-
-  return (
-    <ConversationContext.Provider
-      value={{
-        state,
-        dispatch,
-        loadConversations,
-        loadMessages,
-        createConversation,
-        deleteConversation,
-        switchConversation,
-      }}
-    >
-      {children}
-    </ConversationContext.Provider>
-  );
-}
-
-export function useConversation() {
-  const context = useContext(ConversationContext);
-  if (!context) {
-    throw new Error('useConversation must be used within ConversationProvider');
+// 初始化：加载会话并自动选择第一个
+export const initConversationsAtom = atom(null, async (get, set) => {
+  const conversations = await api.getConversations();
+  set(conversationsAtom, conversations);
+  const currentId = get(currentConversationIdAtom);
+  if (conversations.length > 0 && !currentId) {
+    const firstId = conversations[0].id;
+    set(currentConversationIdAtom, firstId);
+    const messages = await api.getMessages(firstId);
+    set(messagesAtom, messages);
   }
-  return context;
-}
+});
 ```
+
+**组件中使用**：
+
+```typescript
+// useChat.ts 中使用 jotai
+import { useAtom, useSetAtom } from 'jotai';
+import { messagesAtom, currentConversationIdAtom, isLoadingAtom } from '../atoms/conversation';
+import { addMessageAtom, updateMessageAtom, initConversationsAtom } from '../atoms/actions';
+
+const [messages] = useAtom(messagesAtom);
+const [currentConversationId] = useAtom(currentConversationIdAtom);
+const addMessage = useSetAtom(addMessageAtom);
+const updateMessage = useSetAtom(updateMessageAtom);
+const initConversations = useSetAtom(initConversationsAtom);
+```
+
+**优势**：
+- 无 Provider 嵌套，组件树更简洁
+- 按需订阅，只有使用特定 atom 的组件才会在该 atom 变化时重渲染
+- 无需手动管理 callback 稳定性（useCallback + ref）
+- 自动处理 StrictMode 双重调用
 
 ---
 
