@@ -46,7 +46,7 @@ class StorageService {
   async getConversations(): Promise<Conversation[]> {
     try {
       const data = await fs.readFile(CONVERSATIONS_FILE, 'utf-8');
-      const parsed = JSON.parse(data);
+      const parsed = JSON.parse(data) as { conversations?: Conversation[] };
       return parsed.conversations || [];
     } catch (error) {
       console.error('Failed to read conversations:', error);
@@ -76,7 +76,7 @@ class StorageService {
     const filePath = path.join(MESSAGES_DIR, `${conversationId}.json`);
     try {
       const data = await fs.readFile(filePath, 'utf-8');
-      const parsed = JSON.parse(data);
+      const parsed = JSON.parse(data) as { messages?: Message[] };
       return parsed.messages || [];
     } catch {
       // 文件不存在，返回空数组

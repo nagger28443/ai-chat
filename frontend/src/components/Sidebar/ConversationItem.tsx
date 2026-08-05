@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSetAtom } from 'jotai';
 import type { Conversation } from '../../types';
-import { switchConversationAtom, deleteConversationAtom, updateConversationAtom } from '../../atoms/actions';
+import { trpc } from '../../lib/trpc';
+import { currentConversationIdAtom } from '../../atoms/conversation';
 import { formatRelativeTime } from '../../utils/date';
 import styles from './ConversationItem.module.css';
 
@@ -15,9 +16,21 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
   const [editTitle, setEditTitle] = useState(conversation.title);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const switchConversation = useSetAtom(switchConversationAtom);
-  const deleteConversation = useSetAtom(deleteConversationAtom);
-  const updateConversation = useSetAtom(updateConversationAtom);
+  const setCurrentConversationId = useSetAtom(currentConversationIdAtom);
+  const utils = trpc.useUtils();
+
+  const deleteMutation = trpc.conversation.delete.useMutation({
+    onSuccess: () => {
+      utils.conversation.getAll.invalidate();
+    },
+  });
+
+  const updateMutation = trpc.conversation.update.useMutation({
+    onSuccess: () => {
+      utils.conversation.getAll.invalidate();
+      setIsEditing(false);
+    },
+  });
 
   // 编辑模式自动聚焦
   useEffect(() => {
@@ -29,14 +42,14 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
 
   const handleClick = () => {
     if (!isEditing) {
-      switchConversation(conversation.id);
+      setCurrentConversationId(conversation.id);
     }
   };
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (window.confirm('确定要删除这个会话吗？')) {
-      deleteConversation(conversation.id);
+      deleteMutation.mutate({ id: conversation.id });
     }
   };
 
@@ -49,9 +62,10 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
   const handleSaveTitle = () => {
     const trimmed = editTitle.trim();
     if (trimmed && trimmed !== conversation.title) {
-      updateConversation({ id: conversation.id, title: trimmed });
+      updateMutation.mutate({ id: conversation.id, title: trimmed });
+    } else {
+      setIsEditing(false);
     }
-    setIsEditing(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

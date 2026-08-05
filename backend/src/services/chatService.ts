@@ -10,8 +10,9 @@ export interface CacheEntry {
   messageId: string;
   conversationId: string;
   content: string;
-  status: 'generating' | 'completed';
+  status: 'generating' | 'completed' | 'error';
   originalPrompt: string;
+  error?: string;
 }
 
 /**
@@ -33,6 +34,18 @@ export function getMessageCache(conversationId: string): CacheEntry | undefined 
 }
 
 /**
+ * 根据 conversationId 查找任意状态的缓存条目
+ */
+export function getCacheByConversationId(conversationId: string): CacheEntry | undefined {
+  for (const entry of messageCache.values()) {
+    if (entry.conversationId === conversationId) {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+/**
  * 设置缓存条目
  */
 export function setMessageCache(conversationId: string, entry: CacheEntry): void {
@@ -47,8 +60,93 @@ export function deleteMessageCache(conversationId: string): void {
 }
 
 /**
+ * 后台生成任务：独立运行，不受消费者断开影响
+ * 逐字符生成内容并更新 cache
+ */
+async function runGenerationTask(
+  conversationId: string,
+  cacheEntry: CacheEntry,
+  messages: Message[],
+  responseText: string,
+): Promise<void> {
+  try {
+    for (let i = 0; i < responseText.length; i++) {
+      cacheEntry.content += responseText[i];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    // 生成完成：更新 cache 和 storage
+    cacheEntry.status = 'completed';
+    const currentMsg = messages.find((m) => m.id === cacheEntry.messageId);
+    if (currentMsg) {
+      currentMsg.content = cacheEntry.content;
+      currentMsg.status = 'completed';
+      delete currentMsg.originalPrompt;
+      await storageService.saveMessages(conversationId, messages);
+    }
+
+    // 完成后延迟清理缓存（给重连的客户端一些时间获取最终状态）
+    setTimeout(() => {
+      if (cacheEntry.status === 'completed') {
+        messageCache.delete(conversationId);
+      }
+    }, 5000);
+  } catch (error) {
+    cacheEntry.status = 'error';
+    cacheEntry.error = error instanceof Error ? error.message : 'Unknown error';
+  }
+}
+
+/**
+ * 从 cache 读取内容的 generator
+ * 独立的 generator 只负责从 cache 读取并 yield，不控制生成逻辑
+ */
+async function* yieldFromCache(
+  cacheEntry: CacheEntry,
+  startPosition: number,
+): AsyncGenerator<
+  | { type: 'chunk'; data: string }
+  | { type: 'done' }
+  | { type: 'error'; data: string }
+> {
+  let position = startPosition;
+  // 超时保护：防止残留缓存导致无限等待
+  const MAX_WAIT_MS = 60_000;
+  const startTime = Date.now();
+
+  while (true) {
+    // 发送新内容
+    if (cacheEntry.content.length > position) {
+      for (let i = position; i < cacheEntry.content.length; i++) {
+        yield { type: 'chunk', data: cacheEntry.content[i] };
+      }
+      position = cacheEntry.content.length;
+    }
+
+    // 检查完成状态
+    if (cacheEntry.status === 'completed') {
+      yield { type: 'done' };
+      return;
+    }
+
+    if (cacheEntry.status === 'error') {
+      yield { type: 'error', data: cacheEntry.error || 'Generation failed' };
+      return;
+    }
+
+    // 超时退出
+    if (Date.now() - startTime > MAX_WAIT_MS) {
+      yield { type: 'error', data: 'Generation timeout' };
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+/**
  * 发送消息（核心业务逻辑）
- * 保存用户消息，创建 assistant 占位，逐字符生成并通过 SSE 发送
+ * 保存用户消息，创建 assistant 占位，启动后台生成任务，从 cache 读取并发送
  */
 export async function* sendMessage(
   conversationId: string,
@@ -74,6 +172,8 @@ export async function* sendMessage(
   messages.push(userMessage);
   await storageService.saveMessages(conversationId, messages);
 
+  yield { type: 'userMessage', data: userMessage };
+
   // 获取 AI 响应
   const responseText = mockAiService.getResponse(content);
 
@@ -90,6 +190,8 @@ export async function* sendMessage(
 
   messages.push(assistantMessage);
   await storageService.saveMessages(conversationId, messages);
+
+  yield { type: 'assistantMessageId', data: assistantMessageId };
 
   // 创建缓存条目
   const cacheEntry: CacheEntry = {
@@ -113,38 +215,11 @@ export async function* sendMessage(
     await storageService.saveConversations(conversations);
   }
 
-  // 逐字符生成（try/finally 确保即使消费者提前终止也能清理缓存）
-  try {
-    for (let i = 0; i < responseText.length; i++) {
-      const chunk = responseText[i];
-      cacheEntry.content += chunk;
-      yield { type: 'chunk', data: chunk };
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+  // 启动后台生成任务（不等待完成，消费者断开不影响生成）
+  runGenerationTask(conversationId, cacheEntry, messages, responseText);
 
-    // 生成完成
-    cacheEntry.status = 'completed';
-    const currentMsg = messages.find((m) => m.id === assistantMessageId);
-    if (currentMsg) {
-      currentMsg.content = cacheEntry.content;
-      currentMsg.status = 'completed';
-      delete currentMsg.originalPrompt;
-      await storageService.saveMessages(conversationId, messages);
-    }
-
-    yield { type: 'done' };
-  } finally {
-    // 客户端提前断开：将已生成的部分内容保存到 storage，标记为 stopped
-    if (cacheEntry.status !== 'completed' && cacheEntry.content.length > 0) {
-      const partialMsg = messages.find((m) => m.id === assistantMessageId);
-      if (partialMsg && partialMsg.status !== 'completed') {
-        partialMsg.content = cacheEntry.content;
-        partialMsg.status = 'stopped';
-        await storageService.saveMessages(conversationId, messages);
-      }
-    }
-    messageCache.delete(conversationId);
-  }
+  // 从 cache 读取并 yield（消费者断开后，后台任务继续运行）
+  yield* yieldFromCache(cacheEntry, 0);
 }
 
 /**
@@ -200,35 +275,11 @@ export async function* regenerateMessage(
 
   const responseText = mockAiService.getResponse(userMessage.content);
 
-  try {
-    for (let i = 0; i < responseText.length; i++) {
-      cacheEntry.content += responseText[i];
-      yield { type: 'chunk', data: responseText[i] };
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+  // 启动后台生成任务
+  runGenerationTask(conversationId, cacheEntry, messages, responseText);
 
-    cacheEntry.status = 'completed';
-    const currentMsg = messages.find((m) => m.id === assistantMessageId);
-    if (currentMsg) {
-      currentMsg.content = cacheEntry.content;
-      currentMsg.status = 'completed';
-      delete currentMsg.originalPrompt;
-      await storageService.saveMessages(conversationId, messages);
-    }
-
-    yield { type: 'done' };
-  } finally {
-    // 客户端提前断开：保存部分内容，标记为 stopped
-    if (cacheEntry.status !== 'completed' && cacheEntry.content.length > 0) {
-      const partialMsg = messages.find((m) => m.id === assistantMessageId);
-      if (partialMsg && partialMsg.status !== 'completed') {
-        partialMsg.content = cacheEntry.content;
-        partialMsg.status = 'stopped';
-        await storageService.saveMessages(conversationId, messages);
-      }
-    }
-    messageCache.delete(conversationId);
-  }
+  // 从 cache 读取并 yield
+  yield* yieldFromCache(cacheEntry, 0);
 }
 
 /**
@@ -278,35 +329,11 @@ export async function* editAndResendMessage(
 
   const responseText = mockAiService.getResponse(newContent);
 
-  try {
-    for (let i = 0; i < responseText.length; i++) {
-      cacheEntry.content += responseText[i];
-      yield { type: 'chunk', data: responseText[i] };
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+  // 启动后台生成任务
+  runGenerationTask(conversationId, cacheEntry, messages, responseText);
 
-    cacheEntry.status = 'completed';
-    const currentMsg = messages.find((m) => m.id === assistantMessageId);
-    if (currentMsg) {
-      currentMsg.content = cacheEntry.content;
-      currentMsg.status = 'completed';
-      delete currentMsg.originalPrompt;
-      await storageService.saveMessages(conversationId, messages);
-    }
-
-    yield { type: 'done' };
-  } finally {
-    // 客户端提前断开：保存部分内容，标记为 stopped
-    if (cacheEntry.status !== 'completed' && cacheEntry.content.length > 0) {
-      const partialMsg = messages.find((m) => m.id === assistantMessageId);
-      if (partialMsg && partialMsg.status !== 'completed') {
-        partialMsg.content = cacheEntry.content;
-        partialMsg.status = 'stopped';
-        await storageService.saveMessages(conversationId, messages);
-      }
-    }
-    messageCache.delete(conversationId);
-  }
+  // 从 cache 读取并 yield
+  yield* yieldFromCache(cacheEntry, 0);
 }
 
 /**
@@ -320,12 +347,14 @@ export async function* resumeMessage(
   | { type: 'done' }
   | { type: 'error'; data: string }
 > {
-  // 1. 优先从 cache 查找
-  const cacheEntry = getMessageCache(conversationId);
+  // 1. 优先从 cache 查找（可能正在生成中，或者已完成但未清理）
+  const cacheEntry = getCacheByConversationId(conversationId);
 
   if (cacheEntry) {
-    // 场景 A：生成仍在进行中
-    yield* resumeFromCache(cacheEntry, frontendContentLength);
+    // 场景 A/B：cache 存在，直接从 cache 读取
+    // 如果生成已完成，会立即 yield done
+    // 如果生成还在进行，会等待并持续 yield
+    yield* yieldFromCache(cacheEntry, frontendContentLength);
     return;
   }
 
@@ -340,7 +369,15 @@ export async function* resumeMessage(
 
   // 已完成的对话：直接补发内容
   if (lastMessage.status === 'completed') {
-    yield* sendFromContent(lastMessage.content, frontendContentLength);
+    // 创建一个临时 cache entry 用于 yield
+    const tempCache: CacheEntry = {
+      messageId: lastMessage.id,
+      conversationId,
+      content: lastMessage.content,
+      status: 'completed',
+      originalPrompt: '',
+    };
+    yield* yieldFromCache(tempCache, frontendContentLength);
     return;
   }
 
@@ -350,10 +387,8 @@ export async function* resumeMessage(
     return;
   }
 
-  // 场景 C：后端重启或客户端断开后恢复，重新生成
-  // 起点取最大值：确保利用 storage 中已保存的部分内容（status=stopped 时）
+  // 场景 C：后端重启或缓存丢失，重新生成
   const responseText = mockAiService.getResponse(lastMessage.originalPrompt);
-  const startPosition = Math.max(frontendContentLength, lastMessage.content.length);
 
   const newCacheEntry: CacheEntry = {
     messageId: lastMessage.id,
@@ -364,75 +399,9 @@ export async function* resumeMessage(
   };
   messageCache.set(conversationId, newCacheEntry);
 
-  try {
-    for (let i = 0; i < responseText.length; i++) {
-      // 已保存的部分内容不重复追加
-      if (i >= newCacheEntry.content.length) {
-        newCacheEntry.content += responseText[i];
-      }
-      if (i >= startPosition) {
-        yield { type: 'chunk', data: responseText[i] };
-        // 只在发送新内容时延迟，追赶阶段不延迟
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-    }
+  // 启动后台生成任务
+  runGenerationTask(conversationId, newCacheEntry, messages, responseText);
 
-    newCacheEntry.status = 'completed';
-    lastMessage.content = newCacheEntry.content;
-    lastMessage.status = 'completed';
-    delete lastMessage.originalPrompt;
-    await storageService.saveMessages(conversationId, messages);
-
-    yield { type: 'done' };
-  } finally {
-    // 客户端提前断开：保存已生成的部分内容到 storage，标记为 stopped
-    if (newCacheEntry.status !== 'completed' && newCacheEntry.content.length > lastMessage.content.length) {
-      lastMessage.content = newCacheEntry.content;
-      lastMessage.status = 'stopped';
-      await storageService.saveMessages(conversationId, messages);
-    }
-    messageCache.delete(conversationId);
-  }
-}
-
-async function* resumeFromCache(
-  cacheEntry: CacheEntry,
-  frontendContentLength: number,
-): AsyncGenerator<{ type: 'chunk'; data: string } | { type: 'done' } | { type: 'error'; data: string }> {
-  let position = frontendContentLength;
-  // 超时保护：防止缓存残留导致无限等待
-  const MAX_WAIT_MS = 30_000;
-  const startTime = Date.now();
-
-  while (true) {
-    if (cacheEntry.content.length > position) {
-      for (let i = position; i < cacheEntry.content.length; i++) {
-        yield { type: 'chunk', data: cacheEntry.content[i] };
-      }
-      position = cacheEntry.content.length;
-    }
-
-    if (cacheEntry.status === 'completed') {
-      yield { type: 'done' };
-      return;
-    }
-
-    // 超时退出，防止死循环
-    if (Date.now() - startTime > MAX_WAIT_MS) {
-      yield { type: 'error', data: 'Resume timeout: cache entry not updating' };
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-async function* sendFromContent(
-  content: string,
-  startPosition: number,
-): AsyncGenerator<{ type: 'chunk'; data: string } | { type: 'done' }> {
-  for (let i = startPosition; i < content.length; i++) {
-    yield { type: 'chunk', data: content[i] };
-  }
-  yield { type: 'done' };
+  // 从 cache 读取并 yield
+  yield* yieldFromCache(newCacheEntry, frontendContentLength);
 }

@@ -3,16 +3,17 @@ import { router, publicProcedure } from '../index.js';
 import { v4 as uuidv4 } from 'uuid';
 import { storageService } from '../../services/storageService.js';
 import { getMessageCache } from '../../services/chatService.js';
+import { conversationSchema, messageSchema } from '../../../../shared/types.js';
 
 /**
  * 会话相关 tRPC procedures
- * 返回类型由 tRPC 从返回值自动推导，前端通过 AppRouter 获得完整类型
+ * 使用 zod schema 明确定义输出类型，确保前端类型推导正确
  */
 export const conversationRouter = router({
   /**
    * 获取所有会话列表
    */
-  getAll: publicProcedure.query(async () => {
+  getAll: publicProcedure.output(z.array(conversationSchema)).query(async () => {
     const conversations = await storageService.getConversations();
     conversations.sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -29,6 +30,7 @@ export const conversationRouter = router({
         title: z.string().optional(),
       })
     )
+    .output(conversationSchema)
     .mutation(async ({ input }) => {
       const newConversation = {
         id: uuidv4(),
@@ -76,6 +78,7 @@ export const conversationRouter = router({
         title: z.string().min(1, 'Title is required'),
       })
     )
+    .output(conversationSchema)
     .mutation(async ({ input }) => {
       const conversations = await storageService.getConversations();
       const conversation = conversations.find((c) => c.id === input.id);
@@ -100,6 +103,13 @@ export const conversationRouter = router({
         conversationId: z.string(),
         limit: z.number().default(10),
         offset: z.number().default(0),
+      })
+    )
+    .output(
+      z.object({
+        messages: z.array(messageSchema),
+        hasMore: z.boolean(),
+        total: z.number(),
       })
     )
     .query(async ({ input }) => {

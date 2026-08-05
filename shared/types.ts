@@ -6,29 +6,36 @@
  * 此处只保留 SSE 端点需要的类型（前端用 satisfies 校验请求体）。
  */
 
-// 会话类型
-export interface Conversation {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messageCount: number;
-}
+import { z } from 'zod';
 
-// 消息类型
-export interface Message {
-  id: string;
-  conversationId: string;
-  role: 'user' | 'assistant';
-  content: string;
-  createdAt: string;
-  status?: 'sending' | 'streaming' | 'generating' | 'completed' | 'stopped' | 'error';
-  error?: string;
+// ============ Zod Schemas（作为唯一数据源） ============
+
+export const conversationSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  messageCount: z.number(),
+});
+
+export const messageSchema = z.object({
+  id: z.string(),
+  conversationId: z.string(),
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+  createdAt: z.string(),
+  status: z.enum(['sending', 'streaming', 'generating', 'completed', 'stopped', 'error']).optional(),
+  error: z.string().optional(),
   /** 中断位置（已生成的字符数），用于断点续传 */
-  interruptedAt?: number;
+  interruptedAt: z.number().optional(),
   /** 原始用户输入，用于断点续传时重新获取 AI 响应 */
-  originalPrompt?: string;
-}
+  originalPrompt: z.string().optional(),
+});
+
+// ============ 从 zod schemas 推导 TypeScript 类型 ============
+
+export type Conversation = z.infer<typeof conversationSchema>;
+export type Message = z.infer<typeof messageSchema>;
 
 // 主题类型
 export type Theme = 'light' | 'dark' | 'system';

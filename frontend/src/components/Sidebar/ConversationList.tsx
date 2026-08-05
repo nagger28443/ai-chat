@@ -1,13 +1,23 @@
+import { trpc } from '../../lib/trpc';
 import { useAtomValue } from 'jotai';
-import { conversationsAtom, currentConversationIdAtom } from '../../atoms/conversation';
+import { currentConversationIdAtom } from '../../atoms/conversation';
 import { ConversationItem } from './ConversationItem';
 import styles from './ConversationList.module.css';
 
 export function ConversationList() {
-  const conversations = useAtomValue(conversationsAtom);
+  const { data: conversations, isLoading } = trpc.conversation.getAll.useQuery();
   const currentId = useAtomValue(currentConversationIdAtom);
 
-  if (conversations.length === 0) {
+  if (isLoading) {
+    return (
+      <div className={styles.empty}>
+        <div className={styles.emptyIcon}>⏳</div>
+        <div className={styles.emptyText}>加载中...</div>
+      </div>
+    );
+  }
+
+  if (!conversations || conversations.length === 0) {
     return (
       <div className={styles.empty}>
         <div className={styles.emptyIcon}>💬</div>

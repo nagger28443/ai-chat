@@ -15,7 +15,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
     "@trpc/client": "^11.18.0",
+    "@trpc/react-query": "^11.18.0",
     "ahooks": "^3.9.7",
     "highlight.js": "^11.11.1",
     "jotai": "^2.20.2",
@@ -24,7 +26,8 @@
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "uuid": "^14.0.1"
+    "uuid": "^14.0.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.0",
