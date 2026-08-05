@@ -7,11 +7,30 @@
   flex-direction: column;
 }
 
-.placeholder {
+.newBtn {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  color: var(--text-secondary);
+  gap: 8px;
+  margin: 12px;
+  padding: 10px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
   font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.newBtn:hover {
+  background-color: var(--bg-tertiary);
+  border-color: var(--accent-color);
+}
+
+.newBtnIcon {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
 }

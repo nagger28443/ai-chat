@@ -16,7 +16,10 @@ app.use(cors());
 
 // 手动解析 JSON body（解决 Express 5 的 body 解析问题）
 app.use((req, res, next) => {
-  if (req.method === 'POST' && req.headers['content-type']?.includes('application/json')) {
+  if (
+    (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') &&
+    req.headers['content-type']?.includes('application/json')
+  ) {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();

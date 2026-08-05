@@ -111,6 +111,55 @@ export class ConversationController {
   }
 
   /**
+   * 更新会话（重命名）
+   */
+  static async updateConversation(
+    req: Request,
+    res: Response<ApiResponse<Conversation>>
+  ) {
+    try {
+      const { id } = req.params;
+      const conversationId = Array.isArray(id) ? id[0] : id;
+      const { title } = req.body;
+
+      if (!title || typeof title !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: 'Title is required',
+        });
+        return;
+      }
+
+      const conversations = await storageService.getConversations();
+      const conversation = conversations.find((c) => c.id === conversationId);
+
+      if (!conversation) {
+        res.status(404).json({
+          success: false,
+          error: 'Conversation not found',
+        });
+        return;
+      }
+
+      conversation.title = title.trim();
+      conversation.updatedAt = new Date().toISOString();
+
+      await storageService.saveConversations(conversations);
+
+      res.json({
+        success: true,
+        data: conversation,
+      });
+    } catch (error) {
+      console.error('Failed to update conversation:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update conversation',
+      });
+    }
+  }
+
+  /**
    * 获取会话的消息记录（支持分页）
    * 查询参数：limit（默认 10）、offset（默认 0）
    * 返回最新的 limit 条消息，offset 用于加载更多

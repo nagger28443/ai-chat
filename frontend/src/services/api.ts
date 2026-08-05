@@ -12,6 +12,7 @@ class ApiService {
     this.getConversations = this.getConversations.bind(this);
     this.createConversation = this.createConversation.bind(this);
     this.deleteConversation = this.deleteConversation.bind(this);
+    this.updateConversation = this.updateConversation.bind(this);
     this.getMessages = this.getMessages.bind(this);
     this.sendMessage = this.sendMessage.bind(this);
     this.resumeChat = this.resumeChat.bind(this);
@@ -76,6 +77,16 @@ class ApiService {
   async deleteConversation(id: string): Promise<void> {
     await this.request<void>(`/conversations/${id}`, {
       method: 'DELETE',
+    });
+  }
+
+  /**
+   * 更新会话（重命名）
+   */
+  async updateConversation(id: string, title: string): Promise<Conversation> {
+    return this.request<Conversation>(`/conversations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ title }),
     });
   }
 

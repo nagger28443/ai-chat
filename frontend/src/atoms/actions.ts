@@ -120,6 +120,19 @@ export const deleteConversationAtom = atom(null, async (get, set, id: string) =>
   }
 });
 
+// 更新会话（重命名）
+export const updateConversationAtom = atom(
+  null,
+  async (get, set, payload: { id: string; title: string }) => {
+    const updated = await api.updateConversation(payload.id, payload.title);
+    const conversations = get(conversationsAtom);
+    set(
+      conversationsAtom,
+      conversations.map((c) => (c.id === payload.id ? { ...c, ...updated } : c))
+    );
+  }
+);
+
 // 添加消息（本地操作）
 export const addMessageAtom = atom(null, (get, set, message: Message) => {
   set(messagesAtom, [...get(messagesAtom), message]);
