@@ -1063,6 +1063,34 @@ export class ChatController {
 
 **GET /api/conversations/:id/messages** 返回时会叠加 messageCache 中的生成进度，确保刷新后的前端能看到 `status: 'generating'` 和已生成的内容。
 
+**GET /api/conversations/:id/messages** 支持分页：
+
+**查询参数**：
+- `limit`：每页条数（默认 10）
+- `offset`：跳过最新的条数（默认 0）
+
+**响应**：
+```json
+{
+  "success": true,
+  "data": {
+    "messages": [...],
+    "hasMore": true,
+    "total": 50
+  }
+}
+```
+
+- `messages`：按时间正序排列的消息列表（从末尾取最新的 limit 条）
+- `hasMore`：是否还有更早的消息
+- `total`：消息总数
+
+**前端分页实现**：
+- 首次加载：`limit=10, offset=0`，取最新 10 条
+- 加载更多：`limit=10, offset=已加载数`，将结果 prepend 到现有消息前
+- MessageList 使用 IntersectionObserver 监听顶部哨兵，滚动到顶部时触发加载
+- 加载后通过 scrollHeight 差值恢复 scrollTop，保持滚动位置不跳变
+
 ---
 
 ## 4. 分阶段实现计划

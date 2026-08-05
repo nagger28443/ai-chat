@@ -111,7 +111,9 @@ export class ConversationController {
   }
 
   /**
-   * 获取会话的消息记录
+   * 获取会话的消息记录（支持分页）
+   * 查询参数：limit（默认 10）、offset（默认 0）
+   * 返回最新的 limit 条消息，offset 用于加载更多
    */
   static async getMessages(
     req: Request,
@@ -120,22 +122,31 @@ export class ConversationController {
     try {
       const { id } = req.params;
       const conversationId = Array.isArray(id) ? id[0] : id;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const offset = parseInt(req.query.offset as string) || 0;
 
-      const messages = await storageService.getMessages(conversationId);
+      const allMessages = await storageService.getMessages(conversationId);
 
-      // 叠加 messageCache 中的生成进度（刷新页面后前端能看到 generating 状态和已生成内容）
+      // 叠加 messageCache 中的生成进度
       const cacheEntry = ChatController.getCacheByConversationId(conversationId);
       if (cacheEntry) {
-        const cachedMsg = messages.find((m) => m.id === cacheEntry.messageId);
+        const cachedMsg = allMessages.find((m) => m.id === cacheEntry.messageId);
         if (cachedMsg) {
           cachedMsg.content = cacheEntry.content;
           cachedMsg.status = 'generating';
         }
       }
 
+      // 分页：从末尾取最新的 limit 条（offset=0 表示最新的一批）
+      const total = allMessages.length;
+      const start = Math.max(0, total - limit - offset);
+      const end = offset === 0 ? total : total - offset;
+      const messages = allMessages.slice(start, end);
+      const hasMore = start > 0;
+
       res.json({
         success: true,
-        data: messages,
+        data: { messages, hasMore, total },
       });
     } catch (error) {
       console.error('Failed to get messages:', error);

@@ -17,6 +17,15 @@ export const messagesAtom = atom<Message[]>([]);
 // 消息加载状态
 export const isLoadingAtom = atom<boolean>(false);
 
+// 是否还有更多历史消息（分页）
+export const hasMoreMessagesAtom = atom<boolean>(false);
+
+// 当前已加载的消息偏移量（分页）
+export const messageOffsetAtom = atom<number>(0);
+
+// 是否正在加载更多消息
+export const isLoadingMoreAtom = atom<boolean>(false);
+
 /**
  * 派生 atoms
  */

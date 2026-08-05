@@ -80,10 +80,18 @@ class ApiService {
   }
 
   /**
-   * 获取会话的消息
+   * 获取会话的消息（分页）
+   * @param limit 每页条数（默认 10）
+   * @param offset 跳过最新的条数（默认 0）
    */
-  async getMessages(conversationId: string): Promise<Message[]> {
-    return this.request<Message[]>(`/conversations/${conversationId}/messages`);
+  async getMessages(
+    conversationId: string,
+    limit: number = 10,
+    offset: number = 0
+  ): Promise<{ messages: Message[]; hasMore: boolean; total: number }> {
+    return this.request<{ messages: Message[]; hasMore: boolean; total: number }>(
+      `/conversations/${conversationId}/messages?limit=${limit}&offset=${offset}`
+    );
   }
 
   /**

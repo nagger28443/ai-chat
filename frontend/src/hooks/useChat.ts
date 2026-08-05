@@ -8,12 +8,15 @@ import {
   messagesAtom,
   currentConversationIdAtom,
   isLoadingAtom,
+  hasMoreMessagesAtom,
+  isLoadingMoreAtom,
 } from '../atoms/conversation';
 import {
   addMessageAtom,
   updateMessageAtom,
   loadConversationsAtom,
   initConversationsAtom,
+  loadMoreMessagesAtom,
 } from '../atoms/actions';
 
 /**
@@ -25,12 +28,15 @@ export function useChat() {
   const [messages] = useAtom(messagesAtom);
   const [currentConversationId] = useAtom(currentConversationIdAtom);
   const [isLoading] = useAtom(isLoadingAtom);
+  const [hasMore] = useAtom(hasMoreMessagesAtom);
+  const [isLoadingMore] = useAtom(isLoadingMoreAtom);
 
   // 写入 atoms
   const addMessage = useSetAtom(addMessageAtom);
   const updateMessage = useSetAtom(updateMessageAtom);
   const loadConversations = useSetAtom(loadConversationsAtom);
   const initConversations = useSetAtom(initConversationsAtom);
+  const loadMore = useSetAtom(loadMoreMessagesAtom);
 
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
@@ -205,10 +211,19 @@ export function useChat() {
     contentRef.current = '';
   });
 
+  const loadMoreMessages = useMemoizedFn(() => {
+    if (currentConversationId) {
+      loadMore(currentConversationId);
+    }
+  });
+
   return {
     messages,
     isStreaming,
     sendMessage,
     stopStreaming,
+    hasMore,
+    isLoadingMore,
+    loadMoreMessages,
   };
 }
