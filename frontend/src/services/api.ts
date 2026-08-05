@@ -1,10 +1,19 @@
 import { trpc } from './trpc.ts';
+import type { AppRouter } from '../../../backend/src/trpc/routers/_app.js';
+import type { inferProcedureInput } from '@trpc/server';
 import type {
   SendMessageInput,
   ResumeChatInput,
   RegenerateMessageInput,
   EditAndResendInput,
 } from '../types/index.ts';
+
+// 从 tRPC router 推导输入类型
+type CreateConversationInput = inferProcedureInput<AppRouter['conversation']['create']>;
+type UpdateConversationInput = inferProcedureInput<AppRouter['conversation']['update']>;
+type DeleteConversationInput = inferProcedureInput<AppRouter['conversation']['delete']>;
+type GetMessagesInput = inferProcedureInput<AppRouter['conversation']['getMessages']>;
+type DeleteMessageInput = inferProcedureInput<AppRouter['message']['delete']>;
 
 const API_BASE_URL = '/api';
 
@@ -26,40 +35,36 @@ class ApiService {
   /**
    * 创建新会话
    */
-  createConversation(title?: string) {
-    return trpc.conversation.create.mutate({ title });
+  createConversation(input?: CreateConversationInput) {
+    return trpc.conversation.create.mutate(input ?? {});
   }
 
   /**
    * 删除会话
    */
-  async deleteConversation(id: string) {
-    await trpc.conversation.delete.mutate({ id });
+  deleteConversation(input: DeleteConversationInput) {
+    return trpc.conversation.delete.mutate(input);
   }
 
   /**
    * 更新会话/重命名
    */
-  updateConversation(id: string, title: string) {
-    return trpc.conversation.update.mutate({ id, title });
+  updateConversation(input: UpdateConversationInput) {
+    return trpc.conversation.update.mutate(input);
   }
 
   /**
    * 获取会话的消息（分页）
    */
-  getMessages(conversationId: string, limit: number = 10, offset: number = 0) {
-    return trpc.conversation.getMessages.query({
-      conversationId,
-      limit,
-      offset,
-    });
+  getMessages(input: GetMessagesInput) {
+    return trpc.conversation.getMessages.query(input);
   }
 
   /**
    * 删除指定消息
    */
-  deleteMessage(conversationId: string, messageId: string) {
-    return trpc.message.delete.mutate({ conversationId, messageId });
+  deleteMessage(input: DeleteMessageInput) {
+    return trpc.message.delete.mutate(input);
   }
 
   // ============ SSE 流式端点（使用 fetch） ============

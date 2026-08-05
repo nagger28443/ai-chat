@@ -2,19 +2,18 @@ import { z } from 'zod';
 import { router, publicProcedure } from '../index.js';
 import { v4 as uuidv4 } from 'uuid';
 import { storageService } from '../../services/storageService.js';
-import { ChatController } from '../../controllers/chatController.js';
-import type { Conversation, Message, GetMessagesOutput } from '../../../../shared/types.js';
+import { getMessageCache } from '../../services/chatService.js';
 
 /**
  * 会话相关 tRPC procedures
+ * 返回类型由 tRPC 从返回值自动推导，前端通过 AppRouter 获得完整类型
  */
 export const conversationRouter = router({
   /**
    * 获取所有会话列表
    */
-  getAll: publicProcedure.query(async (): Promise<Conversation[]> => {
+  getAll: publicProcedure.query(async () => {
     const conversations = await storageService.getConversations();
-    // 按更新时间降序排序
     conversations.sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
@@ -30,8 +29,8 @@ export const conversationRouter = router({
         title: z.string().optional(),
       })
     )
-    .mutation(async ({ input }): Promise<Conversation> => {
-      const newConversation: Conversation = {
+    .mutation(async ({ input }) => {
+      const newConversation = {
         id: uuidv4(),
         title: input.title || '新对话',
         createdAt: new Date().toISOString(),
@@ -55,7 +54,7 @@ export const conversationRouter = router({
         id: z.string(),
       })
     )
-    .mutation(async ({ input }): Promise<{ success: boolean }> => {
+    .mutation(async ({ input }) => {
       const conversations = await storageService.getConversations();
       const conversation = conversations.find((c) => c.id === input.id);
 
@@ -77,7 +76,7 @@ export const conversationRouter = router({
         title: z.string().min(1, 'Title is required'),
       })
     )
-    .mutation(async ({ input }): Promise<Conversation> => {
+    .mutation(async ({ input }) => {
       const conversations = await storageService.getConversations();
       const conversation = conversations.find((c) => c.id === input.id);
 
@@ -103,13 +102,13 @@ export const conversationRouter = router({
         offset: z.number().default(0),
       })
     )
-    .query(async ({ input }): Promise<GetMessagesOutput> => {
+    .query(async ({ input }) => {
       const { conversationId, limit, offset } = input;
 
       const allMessages = await storageService.getMessages(conversationId);
 
       // 叠加 messageCache 中的生成进度
-      const cacheEntry = ChatController.getCacheByConversationId(conversationId);
+      const cacheEntry = getMessageCache(conversationId);
       if (cacheEntry) {
         const cachedMsg = allMessages.find((m) => m.id === cacheEntry.messageId);
         if (cachedMsg) {

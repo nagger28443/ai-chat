@@ -1,6 +1,9 @@
 /**
  * 共享类型定义
  * 前后端共同使用的类型，避免重复定义
+ *
+ * 注意：CRUD 操作的输入输出类型由 tRPC + zod 自动推导，
+ * 此处只保留 SSE 端点需要的类型（前端用 satisfies 校验请求体）。
  */
 
 // 会话类型
@@ -29,13 +32,6 @@ export interface Message {
 
 // 主题类型
 export type Theme = 'light' | 'dark' | 'system';
-
-// API 响应类型
-export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
 
 // SSE 事件类型
 export interface SSEMessageEvent {
@@ -73,17 +69,6 @@ export interface ResumeChatInput {
   frontendContentLength: number;
 }
 
-// DELETE /api/chat/messages - 删除指定消息
-export interface DeleteMessageInput {
-  conversationId: string;
-  messageId: string;
-}
-
-// DELETE /api/chat/messages - 删除消息响应
-export interface DeleteMessageOutput {
-  messages: Message[];
-}
-
 // POST /api/chat/regenerate - 重新生成回复
 export interface RegenerateMessageInput {
   conversationId: string;
@@ -94,21 +79,4 @@ export interface EditAndResendInput {
   conversationId: string;
   messageId: string;
   newContent: string;
-}
-
-// GET /api/conversations/:id/messages - 获取消息列表响应
-export interface GetMessagesOutput {
-  messages: Message[];
-  hasMore: boolean;
-  total: number;
-}
-
-// POST /api/conversations - 创建会话输入
-export interface CreateConversationInput {
-  title?: string;
-}
-
-// PUT /api/conversations/:id - 更新会话输入
-export interface UpdateConversationInput {
-  title: string;
 }

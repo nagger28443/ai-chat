@@ -29,7 +29,7 @@ export const loadMessagesAtom = atom(null, async (_get, set, conversationId: str
   set(isLoadingAtom, true);
   set(messageOffsetAtom, 0);
   try {
-    const result = await api.getMessages(conversationId, PAGE_SIZE, 0);
+    const result = await api.getMessages({ conversationId, limit: PAGE_SIZE, offset: 0 });
     set(messagesAtom, result.messages);
     set(hasMoreMessagesAtom, result.hasMore);
     set(messageOffsetAtom, result.messages.length);
@@ -47,7 +47,7 @@ export const loadMoreMessagesAtom = atom(null, async (get, set, conversationId: 
   set(isLoadingMoreAtom, true);
   const currentOffset = get(messageOffsetAtom);
   try {
-    const result = await api.getMessages(conversationId, PAGE_SIZE, currentOffset);
+    const result = await api.getMessages({ conversationId, limit: PAGE_SIZE, offset: currentOffset });
     // 将旧消息 prepend 到现有消息前面
     const currentMessages = get(messagesAtom);
     set(messagesAtom, [...result.messages, ...currentMessages]);
@@ -67,7 +67,7 @@ export const switchConversationAtom = atom(null, async (get, set, id: string) =>
   set(hasMoreMessagesAtom, false);
   set(isLoadingAtom, true);
   try {
-    const result = await api.getMessages(id, PAGE_SIZE, 0);
+    const result = await api.getMessages({ conversationId: id, limit: PAGE_SIZE, offset: 0 });
     set(messagesAtom, result.messages);
     set(hasMoreMessagesAtom, result.hasMore);
     set(messageOffsetAtom, result.messages.length);
@@ -92,7 +92,7 @@ export const createConversationAtom = atom(null, async (get, set) => {
 
 // 删除会话
 export const deleteConversationAtom = atom(null, async (get, set, id: string) => {
-  await api.deleteConversation(id);
+  await api.deleteConversation({ id });
   const conversations = get(conversationsAtom).filter((c) => c.id !== id);
   set(conversationsAtom, conversations);
 
@@ -102,7 +102,7 @@ export const deleteConversationAtom = atom(null, async (get, set, id: string) =>
       set(currentConversationIdAtom, conversations[0].id);
       set(isLoadingAtom, true);
       try {
-        const result = await api.getMessages(conversations[0].id, PAGE_SIZE, 0);
+        const result = await api.getMessages({ conversationId: conversations[0].id, limit: PAGE_SIZE, offset: 0 });
         set(messagesAtom, result.messages);
         set(hasMoreMessagesAtom, result.hasMore);
         set(messageOffsetAtom, result.messages.length);
@@ -124,7 +124,7 @@ export const deleteConversationAtom = atom(null, async (get, set, id: string) =>
 export const updateConversationAtom = atom(
   null,
   async (get, set, payload: { id: string; title: string }) => {
-    const updated = await api.updateConversation(payload.id, payload.title);
+    const updated = await api.updateConversation({ id: payload.id, title: payload.title });
     const conversations = get(conversationsAtom);
     set(
       conversationsAtom,
@@ -154,7 +154,7 @@ export const deleteMessageAtom = atom(
   null,
   async (get, set, payload: { conversationId: string; messageId: string }) => {
     try {
-      const result = await api.deleteMessage(payload.conversationId, payload.messageId);
+      const result = await api.deleteMessage({ conversationId: payload.conversationId, messageId: payload.messageId });
       set(messagesAtom, result.messages);
 
       // 更新会话消息计数
@@ -226,7 +226,7 @@ export const initConversationsAtom = atom(null, async (get, set) => {
     set(currentConversationIdAtom, firstId);
     set(isLoadingAtom, true);
     try {
-      const result = await api.getMessages(firstId, PAGE_SIZE, 0);
+      const result = await api.getMessages({ conversationId: firstId, limit: PAGE_SIZE, offset: 0 });
       set(messagesAtom, result.messages);
       set(hasMoreMessagesAtom, result.hasMore);
       set(messageOffsetAtom, result.messages.length);
