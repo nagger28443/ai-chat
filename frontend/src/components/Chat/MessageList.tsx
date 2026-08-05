@@ -9,6 +9,9 @@ interface MessageListProps {
   hasMore?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
+  onDeleteMessage?: (messageId: string) => void;
+  onRegenerate?: () => void;
+  onEditAndResend?: (messageId: string, newContent: string) => void;
 }
 
 export function MessageList({
@@ -17,6 +20,9 @@ export function MessageList({
   hasMore = false,
   isLoadingMore = false,
   onLoadMore,
+  onDeleteMessage,
+  onRegenerate,
+  onEditAndResend,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -136,7 +142,13 @@ export function MessageList({
         </div>
       )}
       {messages.map((message) => (
-        <MessageItem key={message.id} message={message} />
+        <MessageItem
+          key={message.id}
+          message={message}
+          onDelete={onDeleteMessage}
+          onRegenerate={onRegenerate}
+          onEditAndResend={onEditAndResend}
+        />
       ))}
       {isLoading && (
         <div className={styles.loading}>

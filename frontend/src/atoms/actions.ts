@@ -149,6 +149,72 @@ export const updateMessageAtom = atom(
   }
 );
 
+// 删除消息
+export const deleteMessageAtom = atom(
+  null,
+  async (get, set, payload: { conversationId: string; messageId: string }) => {
+    try {
+      const result = await api.deleteMessage(payload.conversationId, payload.messageId);
+      set(messagesAtom, result.messages);
+
+      // 更新会话消息计数
+      const conversations = get(conversationsAtom);
+      const conversation = conversations.find((c) => c.id === payload.conversationId);
+      if (conversation) {
+        conversation.messageCount = result.messages.length;
+        set(conversationsAtom, [...conversations]);
+      }
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+    }
+  }
+);
+
+// 重新生成（移除指定消息之后的所有内容，前端状态更新后由 hook 发起 SSE）
+export const regenerateAtom = atom(
+  null,
+  (get, set, conversationId: string) => {
+    const messages = get(messagesAtom);
+
+    // 找到最后一条 user 消息
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+
+    if (lastUserIdx === -1) return null;
+
+    // 移除 lastUserIdx 之后的所有消息
+    const remaining = messages.slice(0, lastUserIdx + 1);
+    set(messagesAtom, remaining);
+
+    return remaining[lastUserIdx].content; // 返回用户消息内容供 hook 使用
+  }
+);
+
+// 编辑并重发（更新用户消息，移除之后的所有内容）
+export const editAndResendAtom = atom(
+  null,
+  (get, set, payload: { messageId: string; newContent: string }) => {
+    const messages = get(messagesAtom);
+    const msgIndex = messages.findIndex((m) => m.id === payload.messageId);
+
+    if (msgIndex === -1) return null;
+
+    // 更新用户消息内容，移除之后的所有消息
+    const updated: Message[] = [
+      ...messages.slice(0, msgIndex),
+      { ...messages[msgIndex], content: payload.newContent },
+    ];
+    set(messagesAtom, updated);
+
+    return payload.newContent; // 返回新内容供 hook 使用
+  }
+);
+
 // 初始化：加载会话并自动选择第一个
 export const initConversationsAtom = atom(null, async (get, set) => {
   const conversations = await api.getConversations();

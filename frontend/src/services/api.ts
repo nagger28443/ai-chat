@@ -149,6 +149,65 @@ class ApiService {
 
     return response;
   }
+
+  /**
+   * 删除指定消息
+   */
+  async deleteMessage(
+    conversationId: string,
+    messageId: string
+  ): Promise<{ messages: Message[] }> {
+    return this.request<{ messages: Message[] }>('/chat/messages', {
+      method: 'DELETE',
+      body: JSON.stringify({ conversationId, messageId }),
+    });
+  }
+
+  /**
+   * 重新生成最后一条 assistant 回复（返回 SSE 流）
+   */
+  async regenerateMessage(conversationId: string): Promise<Response> {
+    const url = `${API_BASE_URL}/chat/regenerate`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ conversationId }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response;
+  }
+
+  /**
+   * 编辑用户消息并重新生成回复（返回 SSE 流）
+   */
+  async editAndResendMessage(
+    conversationId: string,
+    messageId: string,
+    newContent: string
+  ): Promise<Response> {
+    const url = `${API_BASE_URL}/chat/edit-and-resend`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ conversationId, messageId, newContent }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response;
+  }
 }
 
 export const api = new ApiService();

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useSSE } from './useSSE';
 import type { Message } from '../types';
 import { useMemoizedFn } from 'ahooks';
+import { api } from '../services/api';
 import {
   messagesAtom,
   currentConversationIdAtom,
@@ -17,6 +18,9 @@ import {
   loadConversationsAtom,
   initConversationsAtom,
   loadMoreMessagesAtom,
+  deleteMessageAtom,
+  regenerateAtom,
+  editAndResendAtom,
 } from '../atoms/actions';
 
 /**
@@ -37,6 +41,9 @@ export function useChat() {
   const loadConversations = useSetAtom(loadConversationsAtom);
   const initConversations = useSetAtom(initConversationsAtom);
   const loadMore = useSetAtom(loadMoreMessagesAtom);
+  const deleteMsg = useSetAtom(deleteMessageAtom);
+  const regenerateAction = useSetAtom(regenerateAtom);
+  const editAndResendAction = useSetAtom(editAndResendAtom);
 
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
@@ -103,7 +110,7 @@ export function useChat() {
     contentRef.current = '';
   });
 
-  const { sendMessage: sendSSERequest, resumeStream, abort } = useSSE({
+  const { sendMessage: sendSSERequest, resumeStream, regenerateStream, editAndResendStream, abort } = useSSE({
     onMessage,
     onDone,
     onError,
@@ -217,6 +224,69 @@ export function useChat() {
     }
   });
 
+  /**
+   * 删除消息
+   */
+  const deleteMessage = useMemoizedFn((messageId: string) => {
+    if (currentConversationId) {
+      deleteMsg({ conversationId: currentConversationId, messageId });
+    }
+  });
+
+  /**
+   * 重新生成最后一条 assistant 回复
+   */
+  const regenerate = useMemoizedFn(async () => {
+    if (!currentConversationId || isStreamingRef.current) return;
+
+    const userContent = regenerateAction(currentConversationId);
+    if (!userContent) return;
+
+    // 创建占位 assistant 消息
+    const assistantMessage: Message = {
+      id: uuidv4(),
+      conversationId: currentConversationId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+      status: 'streaming',
+    };
+    addMessage(assistantMessage);
+    setStreamingMessageId(assistantMessage.id);
+    setIsStreaming(true);
+    contentRef.current = '';
+
+    // 发起 regenerate SSE 请求
+    await regenerateStream(currentConversationId);
+  });
+
+  /**
+   * 编辑用户消息并重新生成回复
+   */
+  const editAndResend = useMemoizedFn(async (messageId: string, newContent: string) => {
+    if (!currentConversationId || isStreamingRef.current) return;
+
+    const content = editAndResendAction({ messageId, newContent });
+    if (!content) return;
+
+    // 创建占位 assistant 消息
+    const assistantMessage: Message = {
+      id: uuidv4(),
+      conversationId: currentConversationId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+      status: 'streaming',
+    };
+    addMessage(assistantMessage);
+    setStreamingMessageId(assistantMessage.id);
+    setIsStreaming(true);
+    contentRef.current = '';
+
+    // 发起 edit-and-resend SSE 请求
+    await editAndResendStream(currentConversationId, messageId, content);
+  });
+
   return {
     messages,
     isStreaming,
@@ -225,5 +295,8 @@ export function useChat() {
     hasMore,
     isLoadingMore,
     loadMoreMessages,
+    deleteMessage,
+    regenerate,
+    editAndResend,
   };
 }

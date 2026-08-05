@@ -4,7 +4,18 @@ import { useChat } from '../../hooks/useChat';
 import styles from './ChatWindow.module.css';
 
 export function ChatWindow() {
-  const { messages, isStreaming, sendMessage, stopStreaming, hasMore, isLoadingMore, loadMoreMessages } = useChat();
+  const {
+    messages,
+    isStreaming,
+    sendMessage,
+    stopStreaming,
+    hasMore,
+    isLoadingMore,
+    loadMoreMessages,
+    deleteMessage,
+    regenerate,
+    editAndResend,
+  } = useChat();
 
   return (
     <div className={styles.chatWindow}>
@@ -14,6 +25,9 @@ export function ChatWindow() {
         hasMore={hasMore}
         isLoadingMore={isLoadingMore}
         onLoadMore={loadMoreMessages}
+        onDeleteMessage={deleteMessage}
+        onRegenerate={regenerate}
+        onEditAndResend={editAndResend}
       />
       <InputArea
         onSend={sendMessage}

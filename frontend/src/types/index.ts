@@ -23,7 +23,7 @@ export interface Message {
 }
 
 // 主题类型
-export type Theme = 'light' | 'dark' | 'auto';
+export type Theme = 'light' | 'dark' | 'system';
 
 // API 响应类型
 export interface ApiResponse<T = unknown> {

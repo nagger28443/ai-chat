@@ -365,6 +365,313 @@ export class ChatController {
   }
 
   /**
+   * 删除指定消息
+   */
+  static async deleteMessage(req: Request, res: Response) {
+    const { conversationId, messageId } = req.body;
+
+    if (!conversationId || !messageId) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing conversationId or messageId',
+      });
+      return;
+    }
+
+    try {
+      const messages = await storageService.deleteMessage(
+        conversationId,
+        messageId
+      );
+      res.json({
+        success: true,
+        data: { messages },
+      });
+    } catch (error) {
+      console.error('Delete message error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to delete message',
+      });
+    }
+  }
+
+  /**
+   * 重新生成最后一条 assistant 回复
+   */
+  static async regenerateMessage(req: Request, res: Response) {
+    const { conversationId } = req.body;
+
+    if (!conversationId) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing conversationId',
+      });
+      return;
+    }
+
+    // 设置 SSE 响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    if (req.socket) {
+      req.socket.setTimeout(0);
+    }
+
+    res.flushHeaders();
+
+    let clientDisconnected = false;
+    res.on('close', () => {
+      clientDisconnected = true;
+    });
+
+    res.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ECONNRESET' || error.code === 'EPIPE') {
+        clientDisconnected = true;
+        return;
+      }
+      console.error('Response error:', error);
+    });
+
+    try {
+      const messages = await storageService.getMessages(conversationId);
+
+      // 找到最后一条 user 消息
+      let lastUserIndex = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          lastUserIndex = i;
+          break;
+        }
+      }
+
+      if (lastUserIndex === -1) {
+        if (!res.writableEnded) {
+          res.write('event: error\ndata: {"message": "No user message found"}\n\n');
+          res.end();
+        }
+        return;
+      }
+
+      // 移除 lastUserIndex 之后的所有消息
+      const userMessage = messages[lastUserIndex];
+      messages.splice(lastUserIndex + 1);
+
+      // 创建新的 assistant 消息占位
+      const assistantMessageId = uuidv4();
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        conversationId,
+        role: 'assistant',
+        content: '',
+        createdAt: new Date().toISOString(),
+        status: 'generating',
+        originalPrompt: userMessage.content,
+      };
+      messages.push(assistantMessage);
+      await storageService.saveMessages(conversationId, messages);
+
+      // 创建缓存条目
+      const cacheEntry: CacheEntry = {
+        messageId: assistantMessageId,
+        conversationId,
+        content: '',
+        status: 'generating',
+        originalPrompt: userMessage.content,
+      };
+      ChatController.messageCache.set(conversationId, cacheEntry);
+
+      // 获取 AI 响应
+      const responseText = mockAiService.getResponse(userMessage.content);
+
+      // 逐字符生成
+      for (let i = 0; i < responseText.length; i++) {
+        const chunk = responseText[i];
+        cacheEntry.content += chunk;
+
+        if (!clientDisconnected && !res.writableEnded) {
+          const eventData = `event: message\ndata: ${JSON.stringify({ content: chunk })}\n\n`;
+          try {
+            res.write(eventData);
+          } catch {
+            clientDisconnected = true;
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      // 生成完成
+      cacheEntry.status = 'completed';
+      const currentMsg = messages.find((m) => m.id === assistantMessageId);
+      if (currentMsg) {
+        currentMsg.content = cacheEntry.content;
+        currentMsg.status = 'completed';
+        delete currentMsg.originalPrompt;
+        await storageService.saveMessages(conversationId, messages);
+      }
+
+      ChatController.messageCache.delete(conversationId);
+
+      if (!clientDisconnected && !res.writableEnded) {
+        try {
+          res.write('event: done\ndata: {}\n\n');
+          res.end();
+        } catch {
+          // 忽略
+        }
+      }
+    } catch (error) {
+      console.error('Regenerate error:', error);
+      ChatController.messageCache.delete(conversationId);
+      if (!res.writableEnded) {
+        try {
+          res.write('event: error\ndata: {"message": "Internal error"}\n\n');
+          res.end();
+        } catch {
+          // 忽略
+        }
+      }
+    }
+  }
+
+  /**
+   * 编辑用户消息并重新生成回复
+   */
+  static async editAndResendMessage(req: Request, res: Response) {
+    const { conversationId, messageId, newContent } = req.body;
+
+    if (!conversationId || !messageId || !newContent) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing conversationId, messageId, or newContent',
+      });
+      return;
+    }
+
+    // 设置 SSE 响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    if (req.socket) {
+      req.socket.setTimeout(0);
+    }
+
+    res.flushHeaders();
+
+    let clientDisconnected = false;
+    res.on('close', () => {
+      clientDisconnected = true;
+    });
+
+    res.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ECONNRESET' || error.code === 'EPIPE') {
+        clientDisconnected = true;
+        return;
+      }
+      console.error('Response error:', error);
+    });
+
+    try {
+      const messages = await storageService.getMessages(conversationId);
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
+
+      if (msgIndex === -1) {
+        if (!res.writableEnded) {
+          res.write('event: error\ndata: {"message": "Message not found"}\n\n');
+          res.end();
+        }
+        return;
+      }
+
+      // 更新用户消息内容
+      messages[msgIndex].content = newContent;
+      // 移除该消息之后的所有消息
+      messages.splice(msgIndex + 1);
+
+      // 创建新的 assistant 消息占位
+      const assistantMessageId = uuidv4();
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        conversationId,
+        role: 'assistant',
+        content: '',
+        createdAt: new Date().toISOString(),
+        status: 'generating',
+        originalPrompt: newContent,
+      };
+      messages.push(assistantMessage);
+      await storageService.saveMessages(conversationId, messages);
+
+      // 创建缓存条目
+      const cacheEntry: CacheEntry = {
+        messageId: assistantMessageId,
+        conversationId,
+        content: '',
+        status: 'generating',
+        originalPrompt: newContent,
+      };
+      ChatController.messageCache.set(conversationId, cacheEntry);
+
+      // 获取 AI 响应
+      const responseText = mockAiService.getResponse(newContent);
+
+      // 逐字符生成
+      for (let i = 0; i < responseText.length; i++) {
+        const chunk = responseText[i];
+        cacheEntry.content += chunk;
+
+        if (!clientDisconnected && !res.writableEnded) {
+          const eventData = `event: message\ndata: ${JSON.stringify({ content: chunk })}\n\n`;
+          try {
+            res.write(eventData);
+          } catch {
+            clientDisconnected = true;
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      // 生成完成
+      cacheEntry.status = 'completed';
+      const currentMsg = messages.find((m) => m.id === assistantMessageId);
+      if (currentMsg) {
+        currentMsg.content = cacheEntry.content;
+        currentMsg.status = 'completed';
+        delete currentMsg.originalPrompt;
+        await storageService.saveMessages(conversationId, messages);
+      }
+
+      ChatController.messageCache.delete(conversationId);
+
+      if (!clientDisconnected && !res.writableEnded) {
+        try {
+          res.write('event: done\ndata: {}\n\n');
+          res.end();
+        } catch {
+          // 忽略
+        }
+      }
+    } catch (error) {
+      console.error('Edit and resend error:', error);
+      ChatController.messageCache.delete(conversationId);
+      if (!res.writableEnded) {
+        try {
+          res.write('event: error\ndata: {"message": "Internal error"}\n\n');
+          res.end();
+        } catch {
+          // 忽略
+        }
+      }
+    }
+  }
+
+  /**
    * 从 messageCache 轮询并发送内容（场景 A）
    */
   private static async resumeFromCache(

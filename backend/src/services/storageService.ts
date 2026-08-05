@@ -101,6 +101,46 @@ class StorageService {
   }
 
   /**
+   * 删除指定消息及其配对消息
+   * 如果是 user 消息，同时移除紧跟的 assistant 回复
+   * @returns 删除后的消息列表
+   */
+  async deleteMessage(
+    conversationId: string,
+    messageId: string
+  ): Promise<Message[]> {
+    const messages = await this.getMessages(conversationId);
+    const index = messages.findIndex((m) => m.id === messageId);
+
+    if (index === -1) {
+      return messages;
+    }
+
+    const msg = messages[index];
+    // 如果是 user 消息，同时移除紧跟的 assistant 回复
+    const removeCount =
+      msg.role === 'user' &&
+      index + 1 < messages.length &&
+      messages[index + 1].role === 'assistant'
+        ? 2
+        : 1;
+
+    messages.splice(index, removeCount);
+    await this.saveMessages(conversationId, messages);
+
+    // 更新会话的消息计数
+    const conversations = await this.getConversations();
+    const conversation = conversations.find((c) => c.id === conversationId);
+    if (conversation) {
+      conversation.messageCount = messages.length;
+      conversation.updatedAt = new Date().toISOString();
+      await this.saveConversations(conversations);
+    }
+
+    return messages;
+  }
+
+  /**
    * 删除会话和消息文件
    */
   async deleteConversation(conversationId: string): Promise<void> {

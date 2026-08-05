@@ -1,16 +1,58 @@
+import { useState, useCallback } from 'react';
 import type { Message } from '../../types';
 import { MarkdownRenderer } from '../Common/MarkdownRenderer';
+import { MessageActions } from './MessageActions';
 import styles from './MessageItem.module.css';
 
 interface MessageItemProps {
   message: Message;
+  onDelete?: (messageId: string) => void;
+  onRegenerate?: () => void;
+  onEditAndResend?: (messageId: string, newContent: string) => void;
 }
 
-export function MessageItem({ message }: MessageItemProps) {
+export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend }: MessageItemProps) {
   const isUser = message.role === 'user';
+  const [isHovered, setIsHovered] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(message.content);
+
+  const handleEdit = useCallback(() => {
+    setIsEditing(true);
+    setEditContent(message.content);
+  }, [message.content]);
+
+  const handleEditConfirm = useCallback(() => {
+    const trimmed = editContent.trim();
+    if (trimmed && trimmed !== message.content) {
+      onEditAndResend?.(message.id, trimmed);
+    }
+    setIsEditing(false);
+  }, [editContent, message.content, message.id, onEditAndResend]);
+
+  const handleEditCancel = useCallback(() => {
+    setEditContent(message.content);
+    setIsEditing(false);
+  }, [message.content]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleEditConfirm();
+      } else if (e.key === 'Escape') {
+        handleEditCancel();
+      }
+    },
+    [handleEditConfirm, handleEditCancel]
+  );
 
   return (
-    <div className={`${styles.messageItem} ${isUser ? styles.user : styles.assistant}`}>
+    <div
+      className={`${styles.messageItem} ${isUser ? styles.user : styles.assistant}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <div className={styles.avatar}>
         {isUser ? '👤' : '🤖'}
       </div>
@@ -25,11 +67,35 @@ export function MessageItem({ message }: MessageItemProps) {
         </div>
         <div className={styles.text}>
           {isUser ? (
-            <p>{message.content}</p>
+            isEditing ? (
+              <div className={styles.editContainer}>
+                <textarea
+                  className={styles.editTextarea}
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  autoFocus
+                  rows={3}
+                />
+                <div className={styles.editActions}>
+                  <button className={styles.editCancelBtn} onClick={handleEditCancel}>
+                    取消
+                  </button>
+                  <button className={styles.editConfirmBtn} onClick={handleEditConfirm}>
+                    发送
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p>{message.content}</p>
+            )
           ) : (
-            <MarkdownRenderer content={message.content} />
+            <MarkdownRenderer
+              content={message.content}
+              isStreaming={message.status === 'streaming' || message.status === 'generating'}
+            />
           )}
-          {message.status === 'streaming' && (
+          {message.status === 'streaming' && !isEditing && (
             <span className={styles.cursor}>▊</span>
           )}
           {message.status === 'generating' && (
@@ -42,6 +108,16 @@ export function MessageItem({ message }: MessageItemProps) {
             <span className={styles.error}>「错误: {message.error}」</span>
           )}
         </div>
+        {!isEditing && (
+          <MessageActions
+            role={message.role}
+            content={message.content}
+            visible={isHovered}
+            onRegenerate={onRegenerate}
+            onEdit={isUser ? handleEdit : undefined}
+            onDelete={() => onDelete?.(message.id)}
+          />
+        )}
       </div>
     </div>
   );
