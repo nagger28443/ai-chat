@@ -1,117 +1,73 @@
-import type { ApiResponse, Conversation, Message } from '../types';
+import { trpc } from './trpc.ts';
+import type {
+  SendMessageInput,
+  ResumeChatInput,
+  RegenerateMessageInput,
+  EditAndResendInput,
+} from '../types/index.ts';
 
 const API_BASE_URL = '/api';
 
 /**
  * API 服务层
- * 封装所有后端 API 调用
+ * - REST 端点使用 tRPC 客户端（类型自动推导）
+ * - SSE 端点使用 fetch（返回原始 Response）
  */
 class ApiService {
-  constructor() {
-    // 绑定 this，确保 useRequest 等直接调用方法时上下文不丢失
-    this.getConversations = this.getConversations.bind(this);
-    this.createConversation = this.createConversation.bind(this);
-    this.deleteConversation = this.deleteConversation.bind(this);
-    this.updateConversation = this.updateConversation.bind(this);
-    this.getMessages = this.getMessages.bind(this);
-    this.sendMessage = this.sendMessage.bind(this);
-    this.resumeChat = this.resumeChat.bind(this);
-  }
-
-  /**
-   * 通用请求方法
-   */
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const url = `${API_BASE_URL}${endpoint}`;
-    const config: RequestInit = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
-    };
-
-    try {
-      const response = await fetch(url, config);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: ApiResponse<T> = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Request failed');
-      }
-
-      return data.data as T;
-    } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
-    }
-  }
+  // ============ tRPC REST 端点（类型从 AppRouter 自动推导） ============
 
   /**
    * 获取所有会话
    */
-  async getConversations(): Promise<Conversation[]> {
-    return this.request<Conversation[]>('/conversations');
+  getConversations() {
+    return trpc.conversation.getAll.query();
   }
 
   /**
    * 创建新会话
    */
-  async createConversation(title?: string): Promise<Conversation> {
-    return this.request<Conversation>('/conversations', {
-      method: 'POST',
-      body: JSON.stringify({ title }),
-    });
+  createConversation(title?: string) {
+    return trpc.conversation.create.mutate({ title });
   }
 
   /**
    * 删除会话
    */
-  async deleteConversation(id: string): Promise<void> {
-    await this.request<void>(`/conversations/${id}`, {
-      method: 'DELETE',
-    });
+  async deleteConversation(id: string) {
+    await trpc.conversation.delete.mutate({ id });
   }
 
   /**
-   * 更新会话（重命名）
+   * 更新会话/重命名
    */
-  async updateConversation(id: string, title: string): Promise<Conversation> {
-    return this.request<Conversation>(`/conversations/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ title }),
-    });
+  updateConversation(id: string, title: string) {
+    return trpc.conversation.update.mutate({ id, title });
   }
 
   /**
    * 获取会话的消息（分页）
-   * @param limit 每页条数（默认 10）
-   * @param offset 跳过最新的条数（默认 0）
    */
-  async getMessages(
-    conversationId: string,
-    limit: number = 10,
-    offset: number = 0
-  ): Promise<{ messages: Message[]; hasMore: boolean; total: number }> {
-    return this.request<{ messages: Message[]; hasMore: boolean; total: number }>(
-      `/conversations/${conversationId}/messages?limit=${limit}&offset=${offset}`
-    );
+  getMessages(conversationId: string, limit: number = 10, offset: number = 0) {
+    return trpc.conversation.getMessages.query({
+      conversationId,
+      limit,
+      offset,
+    });
   }
+
+  /**
+   * 删除指定消息
+   */
+  deleteMessage(conversationId: string, messageId: string) {
+    return trpc.message.delete.mutate({ conversationId, messageId });
+  }
+
+  // ============ SSE 流式端点（使用 fetch） ============
 
   /**
    * 发送消息（返回 SSE 流）
    */
-  async sendMessage(
-    conversationId: string,
-    content: string
-  ): Promise<Response> {
+  async sendMessage(conversationId: string, content: string): Promise<Response> {
     const url = `${API_BASE_URL}/chat`;
 
     const response = await fetch(url, {
@@ -119,7 +75,7 @@ class ApiService {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ conversationId, content }),
+      body: JSON.stringify({ conversationId, content } satisfies SendMessageInput),
     });
 
     if (!response.ok) {
@@ -140,7 +96,10 @@ class ApiService {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ conversationId, frontendContentLength }),
+      body: JSON.stringify({
+        conversationId,
+        frontendContentLength,
+      } satisfies ResumeChatInput),
     });
 
     if (!response.ok) {
@@ -148,19 +107,6 @@ class ApiService {
     }
 
     return response;
-  }
-
-  /**
-   * 删除指定消息
-   */
-  async deleteMessage(
-    conversationId: string,
-    messageId: string
-  ): Promise<{ messages: Message[] }> {
-    return this.request<{ messages: Message[] }>('/chat/messages', {
-      method: 'DELETE',
-      body: JSON.stringify({ conversationId, messageId }),
-    });
   }
 
   /**
@@ -174,7 +120,7 @@ class ApiService {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ conversationId }),
+      body: JSON.stringify({ conversationId } satisfies RegenerateMessageInput),
     });
 
     if (!response.ok) {
@@ -199,7 +145,11 @@ class ApiService {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ conversationId, messageId, newContent }),
+      body: JSON.stringify({
+        conversationId,
+        messageId,
+        newContent,
+      } satisfies EditAndResendInput),
     });
 
     if (!response.ok) {

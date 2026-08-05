@@ -2,7 +2,12 @@ import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { storageService } from '../services/storageService.js';
 import { ChatController } from './chatController.js';
-import type { ApiResponse, Conversation } from '../types/index.js';
+import type {
+  ApiResponse,
+  Conversation,
+  CreateConversationInput,
+  UpdateConversationInput,
+} from '../types/index.js';
 
 /**
  * 会话管理控制器
@@ -42,7 +47,7 @@ export class ConversationController {
     res: Response<ApiResponse<Conversation>>
   ) {
     try {
-      const { title } = req.body;
+      const { title } = req.body as CreateConversationInput;
 
       const newConversation: Conversation = {
         id: uuidv4(),
@@ -120,7 +125,7 @@ export class ConversationController {
     try {
       const { id } = req.params;
       const conversationId = Array.isArray(id) ? id[0] : id;
-      const { title } = req.body;
+      const { title } = req.body as UpdateConversationInput;
 
       if (!title || typeof title !== 'string') {
         res.status(400).json({

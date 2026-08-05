@@ -2,8 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import conversationRoutes from './routes/conversations.js';
 import chatRoutes from './routes/chat.js';
+import { appRouter } from './trpc/routers/_app.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +51,14 @@ app.get('/api/health', (_req, res) => {
     },
   });
 });
+
+// tRPC 中间件
+app.use(
+  '/api/trpc',
+  createExpressMiddleware({
+    router: appRouter,
+  })
+);
 
 // 注册路由
 app.use('/api/conversations', conversationRoutes);

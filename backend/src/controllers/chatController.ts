@@ -2,7 +2,14 @@ import type { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { storageService } from "../services/storageService.js";
 import { mockAiService } from "../services/mockAiService.js";
-import type { Message } from "../types/index.js";
+import type {
+  Message,
+  SendMessageInput,
+  ResumeChatInput,
+  DeleteMessageInput,
+  RegenerateMessageInput,
+  EditAndResendInput,
+} from "../types/index.js";
 
 /**
  * 缓存条目：存储正在生成中的消息状态
@@ -43,7 +50,7 @@ export class ChatController {
   }
 
   static async sendMessage(req: Request, res: Response) {
-    const { conversationId, content } = req.body;
+    const { conversationId, content } = req.body as SendMessageInput;
 
     // 验证请求参数
     if (!conversationId || !content) {
@@ -216,7 +223,7 @@ export class ChatController {
    *   在 storage 场景（后端重启）下，resumeMessage 承担重新生成的职责
    */
   static async resumeMessage(req: Request, res: Response) {
-    const { conversationId, frontendContentLength = 0 } = req.body;
+    const { conversationId, frontendContentLength = 0 } = req.body as ResumeChatInput;
 
     if (!conversationId) {
       res.status(400).json({
@@ -368,7 +375,7 @@ export class ChatController {
    * 删除指定消息
    */
   static async deleteMessage(req: Request, res: Response) {
-    const { conversationId, messageId } = req.body;
+    const { conversationId, messageId } = req.body as DeleteMessageInput;
 
     if (!conversationId || !messageId) {
       res.status(400).json({
@@ -400,7 +407,7 @@ export class ChatController {
    * 重新生成最后一条 assistant 回复
    */
   static async regenerateMessage(req: Request, res: Response) {
-    const { conversationId } = req.body;
+    const { conversationId } = req.body as RegenerateMessageInput;
 
     if (!conversationId) {
       res.status(400).json({
@@ -541,7 +548,7 @@ export class ChatController {
    * 编辑用户消息并重新生成回复
    */
   static async editAndResendMessage(req: Request, res: Response) {
-    const { conversationId, messageId, newContent } = req.body;
+    const { conversationId, messageId, newContent } = req.body as EditAndResendInput;
 
     if (!conversationId || !messageId || !newContent) {
       res.status(400).json({
