@@ -96,15 +96,23 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
   );
 
   /**
-   * 发送消息并处理 SSE 流
+   * 通用 SSE 请求执行器（高阶函数）
+   *
+   * 封装所有 stream 方法的公共流程：
+   * 1. 创建 AbortController 并绑定 signal
+   * 2. 调用 api 方法获取 Response
+   * 3. 处理 SSE 流
+   * 4. 统一错误处理（区分 AbortError 和其他错误）
+   *
+   * @param apiCall - 接收 signal 并返回 Response 的函数
    */
-  const sendMessage = useCallback(
-    async (conversationId: string, content: string) => {
+  const executeStream = useCallback(
+    async (apiCall: (signal: AbortSignal) => Promise<Response>) => {
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
 
       try {
-        const response = await api.sendMessage(conversationId, content, signal);
+        const response = await apiCall(signal);
         await processStream(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
@@ -118,80 +126,37 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
     [onError, processStream]
   );
 
-  /**
-   * 续传中断的对话
-   */
+  /** 发送消息并处理 SSE 流 */
+  const sendMessage = useCallback(
+    (conversationId: string, content: string) =>
+      executeStream((signal) => api.sendMessage(conversationId, content, signal)),
+    [executeStream]
+  );
+
+  /** 续传中断的对话 */
   const resumeStream = useCallback(
-    async (conversationId: string) => {
-      abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
-
-      try {
-        const response = await api.resumeChat(conversationId, signal);
-        await processStream(response);
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          console.log('Request aborted by user');
-        } else {
-          onError(error instanceof Error ? error.message : 'Unknown error');
-        }
-      }
-    },
-    [onError, processStream]
+    (conversationId: string) =>
+      executeStream((signal) => api.resumeChat(conversationId, signal)),
+    [executeStream]
   );
 
-  /**
-   * 重新生成回复（SSE 流）
-   */
+  /** 重新生成回复（SSE 流） */
   const regenerateStream = useCallback(
-    async (conversationId: string) => {
-      abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
-
-      try {
-        const response = await api.regenerateMessage(conversationId, signal);
-        await processStream(response);
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          console.log('Request aborted by user');
-        } else {
-          onError(error instanceof Error ? error.message : 'Unknown error');
-        }
-      }
-    },
-    [onError, processStream]
+    (conversationId: string) =>
+      executeStream((signal) => api.regenerateMessage(conversationId, signal)),
+    [executeStream]
   );
 
-  /**
-   * 编辑并重发（SSE 流）
-   */
+  /** 编辑并重发（SSE 流） */
   const editAndResendStream = useCallback(
-    async (conversationId: string, messageId: string, newContent: string) => {
-      abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
-
-      try {
-        const response = await api.editAndResendMessage(
-          conversationId,
-          messageId,
-          newContent,
-          signal
-        );
-        await processStream(response);
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          console.log('Request aborted by user');
-        } else {
-          onError(error instanceof Error ? error.message : 'Unknown error');
-        }
-      }
-    },
-    [onError, processStream]
+    (conversationId: string, messageId: string, newContent: string) =>
+      executeStream((signal) =>
+        api.editAndResendMessage(conversationId, messageId, newContent, signal)
+      ),
+    [executeStream]
   );
 
-  /**
-   * 中止当前请求
-   */
+  /** 中止当前请求 */
   const abort = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();

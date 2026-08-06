@@ -9,9 +9,10 @@ interface MessageItemProps {
   onDelete?: (messageId: string) => void;
   onRegenerate?: () => void;
   onEditAndResend?: (messageId: string, newContent: string) => void;
+  onRetry?: (messageId: string) => void;
 }
 
-export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend }: MessageItemProps) {
+export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend, onRetry }: MessageItemProps) {
   const isUser = message.role === 'user';
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -105,7 +106,17 @@ export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend }
             <span className={styles.interrupted}>「已中断」</span>
           )}
           {message.status === 'error' && (
-            <span className={styles.error}>「错误: {message.error}」</span>
+            <span className={styles.error}>
+              「错误: {message.error}」
+              {onRetry && (
+                <button
+                  className={styles.retryBtn}
+                  onClick={() => onRetry(message.id)}
+                >
+                  🔄 重试
+                </button>
+              )}
+            </span>
           )}
         </div>
         {!isEditing && (

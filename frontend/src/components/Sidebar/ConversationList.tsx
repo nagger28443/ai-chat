@@ -1,12 +1,11 @@
 import { trpc } from '../../lib/trpc';
-import { useAtomValue } from 'jotai';
-import { currentConversationIdAtom } from '../../atoms/conversation';
+import { useSearchParam } from '../../hooks/useSearchParam';
 import { ConversationItem } from './ConversationItem';
 import styles from './ConversationList.module.css';
 
 export function ConversationList() {
   const { data: conversations, isLoading } = trpc.conversation.getAll.useQuery();
-  const currentId = useAtomValue(currentConversationIdAtom);
+  const [currentId] = useSearchParam('conversationId');
 
   if (isLoading) {
     return (

@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { useSetAtom } from 'jotai';
 import type { Conversation } from '../../types';
 import { trpc } from '../../lib/trpc';
-import { currentConversationIdAtom } from '../../atoms/conversation';
+import { useSearchParam } from '../../hooks/useSearchParam';
 import { formatRelativeTime } from '../../utils/date';
 import styles from './ConversationItem.module.css';
 
@@ -16,7 +15,7 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
   const [editTitle, setEditTitle] = useState(conversation.title);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const setCurrentConversationId = useSetAtom(currentConversationIdAtom);
+  const [, setCurrentConversationId] = useSearchParam('conversationId');
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.conversation.delete.useMutation({

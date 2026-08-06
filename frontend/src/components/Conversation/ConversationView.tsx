@@ -25,6 +25,7 @@ export function ConversationView({ conversationId }: ConversationViewProps) {
     deleteMessage,
     regenerate,
     editAndResend,
+    retryMessage,
   } = useConversationChat({ conversationId });
 
   if (!conversationId) {
@@ -42,6 +43,7 @@ export function ConversationView({ conversationId }: ConversationViewProps) {
         onDeleteMessage={deleteMessage}
         onRegenerate={regenerate}
         onEditAndResend={editAndResend}
+        onRetry={retryMessage}
       />
       <InputArea onSend={sendMessage} onStop={stopStreaming} isLoading={isStreaming} />
     </div>
