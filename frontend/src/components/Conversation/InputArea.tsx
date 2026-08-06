@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { MAX_MESSAGE_LENGTH } from '../../types';
+import { MAX_MESSAGE_LENGTH } from '../../../../shared/types';
+import { TEXTAREA_MAX_HEIGHT } from '../../constants';
 import styles from './InputArea.module.css';
 
 interface InputAreaProps {
@@ -20,7 +21,7 @@ export function InputArea({ onSend, onStop, isLoading, disabled }: InputAreaProp
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
     }
   }, [input]);
 

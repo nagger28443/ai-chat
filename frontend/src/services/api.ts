@@ -9,7 +9,7 @@ import { HttpError } from '../utils/httpError';
 const API_BASE_URL = '/api';
 
 /**
- * SSE 流式端点 API
+ * API 服务层
  * REST 端点已迁移到 tRPC hooks（见 lib/trpc.ts）
  *
  * 错误处理：所有方法在 !response.ok 时抛出 HttpError（结构化错误）
@@ -59,6 +59,18 @@ class ApiService {
       { conversationId, messageId, newContent } satisfies EditAndResendInput,
       signal
     );
+  }
+
+  // ============ 非流式端点 ============
+
+  /**
+   * 取消指定会话的后端生成任务
+   *
+   * 仅用户点击"停止"按钮时调用。SSE 连接断开（网络问题、切换会话）
+   * 不会触发取消，后端生成任务继续运行，下次访问可断点续传。
+   */
+  async cancelGeneration(conversationId: string): Promise<void> {
+    await this.post(`${API_BASE_URL}/chat/cancel`, { conversationId });
   }
 
   /**

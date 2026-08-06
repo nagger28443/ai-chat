@@ -3,9 +3,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { useMemoizedFn } from 'ahooks';
 import { trpc } from '../lib/trpc';
 import { useSSE } from './useSSE';
+import { api } from '../services/api';
+import { PAGE_SIZE } from '../constants';
 import type { Message } from '../types';
-
-const PAGE_SIZE = 10;
 
 interface UseConversationChatOptions {
   conversationId: string | null;
@@ -65,6 +65,8 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
 
   // 记录当前正在续传的会话 ID（有活跃的 SSE 连接）
   const resumingConversationsRef = useRef<Set<string>>(new Set());
+  // 通用防重入锁：任何操作（SSE 或 mutation）执行中为 true
+  const operationInFlightRef = useRef(false);
   // 用 ref 保存最新的 messages，避免 useEffect 闭包过期问题
   const messagesRef = useRef<Message[]>(allMessages);
   messagesRef.current = allMessages;
@@ -78,6 +80,29 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
   const contentRef = useRef('');
   // 重试动作映射：messageId → 重试函数。错误时保留，成功时清除
   const retryActionsRef = useRef<Map<string, () => Promise<void>>>(new Map());
+  // 断线重连状态
+  const [isReconnecting, setIsReconnecting] = useState(false);
+
+  /**
+   * SSE 断线重连回调
+   *
+   * 重连时后端会从 cache 位置 0 重新发送内容，因此需要：
+   * 1. 清空 contentRef（避免累积重复内容）
+   * 2. 清空 streaming 消息的 content（重连后会重新填充）
+   * 3. 显示"正在重新连接..."状态
+   */
+  const onReconnecting = useMemoizedFn((_attempt: number) => {
+    setIsReconnecting(true);
+    contentRef.current = '';
+    const msgId = streamingMessageIdRef.current;
+    if (msgId) {
+      setAllMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === msgId ? { ...msg, content: '' } : msg
+        )
+      );
+    }
+  });
 
   const onMessage = useMemoizedFn((content) => {
     const msgId = streamingMessageIdRef.current;
@@ -106,6 +131,9 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
     setIsStreaming(false);
     setStreamingMessageId(null);
     contentRef.current = '';
+    setIsReconnecting(false);
+    // 释放操作锁
+    operationInFlightRef.current = false;
     // 从续传集合中移除（续传已完成）
     if (conversationId) {
       resumingConversationsRef.current.delete(conversationId);
@@ -126,6 +154,9 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
     setIsStreaming(false);
     setStreamingMessageId(null);
     contentRef.current = '';
+    setIsReconnecting(false);
+    // 释放操作锁（失败后允许重试）
+    operationInFlightRef.current = false;
     // 从续传集合中移除（续传出错）
     if (conversationId) {
       resumingConversationsRef.current.delete(conversationId);
@@ -142,6 +173,7 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
     onMessage,
     onDone,
     onError,
+    onReconnecting,
   });
 
   // 切换会话时重置状态并中止当前 SSE 连接
@@ -155,7 +187,10 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
     // 重置流式状态
     setIsStreaming(false);
     setStreamingMessageId(null);
+    setIsReconnecting(false);
     contentRef.current = '';
+    // 释放操作锁（abort 后 executeStream 直接返回，不会走到 onDone/onError 释放）
+    operationInFlightRef.current = false;
     // 重置分页
     setOffset(0);
   }, [conversationId, abort]);
@@ -168,7 +203,8 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
   }, [abort]);
 
   const sendMessage = useMemoizedFn(async (content: string) => {
-    if (!conversationId || isStreamingRef.current) return;
+    if (!conversationId || operationInFlightRef.current) return;
+    operationInFlightRef.current = true;
 
     // 添加用户消息
     const userMessage: Message = {
@@ -220,16 +256,21 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
    * @param targetMsg 可选，直接传入要续传的消息（避免依赖 messagesRef 的时序问题）
    */
   const resumeConversation = useMemoizedFn(async (targetMsg?: Message) => {
-    if (!conversationId || isStreamingRef.current) return;
+    if (!conversationId || operationInFlightRef.current) return;
+    operationInFlightRef.current = true;
 
     // 找到中断的消息：优先使用传入的参数，否则从 messagesRef 中查找
+    // 仅对 'generating' 状态的消息续传（stopped 是用户主动中断，不续传）
     const interruptedMsg =
       targetMsg ??
       messagesRef.current.find(
-        (m) => m.role === 'assistant' && (m.status === 'generating' || m.status === 'stopped')
+        (m) => m.role === 'assistant' && m.status === 'generating'
       );
 
-    if (!interruptedMsg) return;
+    if (!interruptedMsg) {
+      operationInFlightRef.current = false;
+      return;
+    }
 
     // 构造"执行续传"函数（重试时复用同一逻辑）
     const doResume = async () => {
@@ -254,7 +295,10 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
   });
 
   /**
-   * 自动续传：消息加载完成后检测中断消息并触发续传
+   * 自动续传：消息加载完成后检测异常中断的消息并触发续传
+   *
+   * 仅对 'generating' 状态的消息续传（后端崩溃、网络意外断开等场景）。
+   * 'stopped' 状态表示用户手动中断，不自动续传，保留已生成内容。
    *
    * 直接在 messagesData 变化时执行，无需 prevDataRef hack：
    * - React useEffect 已保证只在依赖变化时运行
@@ -266,8 +310,9 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
     if (offset !== 0) return;
     if (resumingConversationsRef.current.has(conversationId)) return;
 
+    // 只查找 'generating' 状态的消息（非用户主动中断的）
     const interruptedMsg = messagesData.messages.find(
-      (m) => m.role === 'assistant' && (m.status === 'generating' || m.status === 'stopped')
+      (m) => m.role === 'assistant' && m.status === 'generating'
     );
 
     if (interruptedMsg) {
@@ -278,6 +323,14 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
   }, [messagesData, conversationId, offset, resumeConversation]);
 
   const stopStreaming = useMemoizedFn(() => {
+    // 用户主动点击"停止"：显式通知后端取消生成任务
+    // 注意：仅 abort SSE 不会取消后端任务（网络断开等场景需要保留续传能力）
+    if (conversationId) {
+      api.cancelGeneration(conversationId).catch((err) => {
+        console.warn('Failed to cancel generation:', err);
+      });
+    }
+
     abort();
     const msgId = streamingMessageIdRef.current;
     if (msgId) {
@@ -288,6 +341,9 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
     setIsStreaming(false);
     setStreamingMessageId(null);
     contentRef.current = '';
+    setIsReconnecting(false);
+    // 释放操作锁
+    operationInFlightRef.current = false;
   });
 
   const loadMoreMessages = useMemoizedFn(() => {
@@ -298,28 +354,43 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
   });
 
   /**
-   * 删除消息
+   * 删除消息（乐观更新）
+   * 点击后立即从本地列表移除，失败时回滚
    */
   const deleteMessageMutation = trpc.message.delete.useMutation({
-    onSuccess: (result) => {
-      // 直接更新本地消息列表
-      setAllMessages(result.messages);
-      // 刷新会话列表以更新消息计数
+    onMutate: async ({ messageId }) => {
+      // 取消相关查询的刷新，防止乐观更新被覆盖
+      await utils.conversation.getMessages.cancel();
+      // 保存当前消息列表快照（用于回滚）
+      const previousMessages = messagesRef.current;
+      // 乐观更新：立即从本地列表移除
+      setAllMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+      return { previousMessages };
+    },
+    onError: (_error, _variables, context) => {
+      // 失败时回滚到快照
+      if (context?.previousMessages) {
+        setAllMessages(context.previousMessages);
+      }
+    },
+    onSettled: () => {
+      // 无论成功失败，最终同步服务端状态
+      utils.conversation.getMessages.invalidate();
       utils.conversation.getAll.invalidate();
     },
   });
 
   const deleteMessage = useMemoizedFn((messageId: string) => {
-    if (conversationId) {
-      deleteMessageMutation.mutate({ conversationId: conversationId, messageId });
-    }
+    if (!conversationId || operationInFlightRef.current) return;
+    deleteMessageMutation.mutate({ conversationId, messageId });
   });
 
   /**
    * 重新生成最后一条 assistant 回复
    */
   const regenerate = useMemoizedFn(async () => {
-    if (!conversationId || isStreamingRef.current) return;
+    if (!conversationId || operationInFlightRef.current) return;
+    operationInFlightRef.current = true;
 
     // 找到最后一条 user 消息
     let lastUserIdx = -1;
@@ -371,7 +442,8 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
    * 编辑用户消息并重新生成回复
    */
   const editAndResend = useMemoizedFn(async (messageId: string, newContent: string) => {
-    if (!conversationId || isStreamingRef.current) return;
+    if (!conversationId || operationInFlightRef.current) return;
+    operationInFlightRef.current = true;
 
     const msgIndex = allMessages.findIndex((m) => m.id === messageId);
     if (msgIndex === -1) return;
@@ -421,13 +493,16 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
    */
   const retryMessage = useMemoizedFn(async (messageId: string) => {
     const action = retryActionsRef.current.get(messageId);
-    if (!action || isStreamingRef.current) return;
+    if (!action || operationInFlightRef.current) return;
+    // 重试动作本身会设置 operationInFlightRef
     await action();
   });
 
   return {
     messages: allMessages,
     isStreaming,
+    isReconnecting,
+    isOperationPending: isStreaming || deleteMessageMutation.isPending,
     hasMore,
     isLoadingMore,
     sendMessage,

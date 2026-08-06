@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { COPIED_INDICATOR_DURATION } from '../../constants';
 import styles from './MessageActions.module.css';
 
 interface MessageActionsProps {
@@ -8,6 +9,8 @@ interface MessageActionsProps {
   content: string;
   /** 操作栏是否可见（由父组件的 hover 状态控制） */
   visible: boolean;
+  /** 操作是否被禁用（其他操作正在进行时） */
+  disabled?: boolean;
   onCopy?: () => void;
   onRegenerate?: () => void;
   onEdit?: () => void;
@@ -18,6 +21,7 @@ export function MessageActions({
   role,
   content,
   visible,
+  disabled,
   onCopy,
   onRegenerate,
   onEdit,
@@ -38,7 +42,7 @@ export function MessageActions({
       document.body.removeChild(textarea);
     }
     setShowCopied(true);
-    setTimeout(() => setShowCopied(false), 1500);
+    setTimeout(() => setShowCopied(false), COPIED_INDICATOR_DURATION);
     onCopy?.();
   }, [content, onCopy]);
 
@@ -47,6 +51,7 @@ export function MessageActions({
       <button
         className={styles.actionBtn}
         onClick={handleCopy}
+        disabled={disabled}
         title="复制消息"
       >
         📋
@@ -56,6 +61,7 @@ export function MessageActions({
         <button
           className={styles.actionBtn}
           onClick={onRegenerate}
+          disabled={disabled}
           title="重新生成"
         >
           🔄
@@ -65,6 +71,7 @@ export function MessageActions({
         <button
           className={styles.actionBtn}
           onClick={onEdit}
+          disabled={disabled}
           title="编辑并重发"
         >
           ✏️
@@ -74,6 +81,7 @@ export function MessageActions({
         <button
           className={styles.actionBtn}
           onClick={onDelete}
+          disabled={disabled}
           title="删除消息"
         >
           🗑️

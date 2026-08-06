@@ -4,12 +4,13 @@ import { ConversationList } from './ConversationList';
 import styles from './Sidebar.module.css';
 
 export function Sidebar() {
-  const [, setCurrentConversationId] = useSearchParam('conversationId');
+  const [conversationId, setCurrentConversationId] = useSearchParam('conversationId');
   const utils = trpc.useUtils();
+  console.log(conversationId);
 
   const createMutation = trpc.conversation.create.useMutation({
-    onSuccess: (conversation) => {
-      utils.conversation.getAll.invalidate();
+    onSuccess: async (conversation) => {
+      await utils.conversation.getAll.invalidate();
       setCurrentConversationId(conversation.id);
     },
   });

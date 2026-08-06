@@ -34,21 +34,21 @@ describe('MockAiService', () => {
     });
   });
 
-  describe('getResponseFrom', () => {
+  describe('generateFrom', () => {
     it('应从指定位置截断响应', () => {
       const full = mockAiService.getResponse('你好');
-      const partial = mockAiService.getResponseFrom('你好', 5);
+      const partial = mockAiService.generateFrom('你好', 5);
       expect(partial).toBe(full.slice(5));
     });
 
     it('起始位置超出长度时返回空字符串', () => {
-      const result = mockAiService.getResponseFrom('你好', 10000);
+      const result = mockAiService.generateFrom('你好', 10000);
       expect(result).toBe('');
     });
 
     it('起始位置为 0 时返回完整响应', () => {
       const full = mockAiService.getResponse('你好');
-      const fromStart = mockAiService.getResponseFrom('你好', 0);
+      const fromStart = mockAiService.generateFrom('你好', 0);
       expect(fromStart).toBe(full);
     });
   });

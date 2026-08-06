@@ -3,8 +3,9 @@
 ## 自动记录提交信息
 
 每次对话中对代码进行修改后（创建、修改、删除文件），在对话即将结束前，必须记录 commit message：
+
 1. 通过 `git diff` 分析本次所有变更
-2. 总结为 Conventional Commits 格式的 commit message
+2. 总结为 Conventional Commits 格式的 commit message，使用中文
 3. **先读取** `shell/git-message.md` 的当前完整内容
 4. 将新的 commit message **追加**到文件末尾，保留原有内容不变
 

@@ -1,0 +1,37 @@
+# 依赖
+node_modules
+frontend/node_modules
+backend/node_modules
+
+# 构建产物
+frontend/dist
+backend/dist
+
+# 数据与日志
+backend/data
+backend/server.log
+*.log
+
+# 测试
+coverage
+.nyc_output
+data-test*
+
+# 开发
+.git
+.gitignore
+.env
+.env.local
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# Docker 自身
+docker-compose.yml
+**/Dockerfile

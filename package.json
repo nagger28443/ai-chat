@@ -1,0 +1,24 @@
+{
+  "name": "ai-chat-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Chat Demo - 全栈 AI 聊天应用",
+  "scripts": {
+    "dev": "concurrently -n FE,BE -c blue,green \"npm:dev:frontend\" \"npm:dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "cd frontend && npm run test",
+    "test:backend": "cd backend && npm run test",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:build": "docker-compose build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

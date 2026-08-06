@@ -17,6 +17,8 @@ export function ConversationView({ conversationId }: ConversationViewProps) {
   const {
     messages,
     isStreaming,
+    isReconnecting,
+    isOperationPending,
     hasMore,
     isLoadingMore,
     sendMessage,
@@ -37,6 +39,8 @@ export function ConversationView({ conversationId }: ConversationViewProps) {
       <MessageList
         messages={messages}
         isLoading={isStreaming}
+        isReconnecting={isReconnecting}
+        isOperationPending={isOperationPending}
         hasMore={hasMore}
         isLoadingMore={isLoadingMore}
         onLoadMore={loadMoreMessages}
@@ -45,7 +49,7 @@ export function ConversationView({ conversationId }: ConversationViewProps) {
         onEditAndResend={editAndResend}
         onRetry={retryMessage}
       />
-      <InputArea onSend={sendMessage} onStop={stopStreaming} isLoading={isStreaming} />
+      <InputArea onSend={sendMessage} onStop={stopStreaming} isLoading={isStreaming} disabled={isOperationPending && !isStreaming} />
     </div>
   );
 }

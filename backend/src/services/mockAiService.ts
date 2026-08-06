@@ -1,7 +1,12 @@
 /**
- * 模拟 AI 服务
- * 提供预设的 Markdown 格式回复模板
+ * Mock AI Provider
+ *
+ * 基于预设模板的模拟 AI 服务，用于开发和演示。
+ * 根据用户输入关键词选择模板，使用哈希确保确定性响应（相同输入 = 相同输出）。
+ *
+ * 实现 AiProvider 接口，方便未来替换为真实 AI 服务。
  */
+import type { AiProvider } from './aiProvider.js';
 
 // 预设回复模板 —— 丰富的 Markdown 格式
 const RESPONSE_TEMPLATES = {
@@ -137,7 +142,7 @@ console.log(stack.isEmpty()); // false
 > 计算机科学中只有两件难事：
 > 缓存失效和命名。
 >
-> — *Phil Karlton*
+> — *Phil Karlit
 
 #### 有序列表
 
@@ -339,26 +344,36 @@ while (true) {
   ],
 };
 
-class MockAiService {
-  /**
-   * 根据用户输入获取回复
-   */
-  getResponse(userMessage: string): string {
-    return this.getResponseFrom(userMessage, 0);
+/**
+ * 模拟 AI 服务提供者
+ */
+class MockAiProvider implements AiProvider {
+  readonly name = 'mock';
+
+  async *generate(
+    prompt: string,
+    _history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>
+  ): AsyncIterable<string> {
+    const response = this.getDeterministicResponse(prompt);
+    for (const char of response) {
+      yield char;
+    }
   }
 
-  /**
-   * 根据用户输入获取回复，从指定位置开始
-   * @param userMessage 用户输入
-   * @param startPosition 开始位置（用于断点续传）
-   * @returns 从 startPosition 开始的响应文本
-   */
-  getResponseFrom(userMessage: string, startPosition: number = 0): string {
-    const fullResponse = this.getDeterministicResponse(userMessage);
+  generateFrom(prompt: string, startPosition: number): string {
+    const fullResponse = this.getDeterministicResponse(prompt);
     if (startPosition >= fullResponse.length) {
       return '';
     }
     return fullResponse.slice(startPosition);
+  }
+
+  /**
+   * 兼容性方法：一次性返回完整响应
+   * chatService 内部使用，用于后台生成任务
+   */
+  getResponse(prompt: string): string {
+    return this.getDeterministicResponse(prompt);
   }
 
   /**
@@ -426,4 +441,7 @@ class MockAiService {
   }
 }
 
-export const mockAiService = new MockAiService();
+export const mockAiProvider = new MockAiProvider();
+
+// 兼容旧代码的别名
+export const mockAiService = mockAiProvider;

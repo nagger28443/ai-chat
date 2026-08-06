@@ -1,0 +1,52 @@
+# ============================================
+# Docker Compose - AI Chat Demo
+# ============================================
+# 用法：
+#   docker-compose up          # 启动所有服务
+#   docker-compose up backend  # 只启动后端
+#   docker-compose down        # 停止并清理
+#   docker-compose logs -f     # 查看日志
+
+services:
+  # ============ 后端 ============
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: chat-backend
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - AI_PROVIDER=${AI_PROVIDER:-mock}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-15000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
+    volumes:
+      # 持久化数据（使用 named volume）
+      - backend-data:/app/data
+    restart: unless-stopped
+    networks:
+      - chat-network
+
+  # ============ 前端 ============
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: chat-frontend
+    ports:
+      - '${FRONTEND_PORT:-8080}:80'
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - chat-network
+
+volumes:
+  backend-data:
+    driver: local
+
+networks:
+  chat-network:
+    driver: bridge

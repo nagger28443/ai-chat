@@ -1,0 +1,33 @@
+# ============================================
+# Frontend Dockerfile - 多阶段构建
+# ============================================
+
+# 阶段 1：构建
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# 复制依赖清单
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+# 复制源代码
+COPY frontend/ ./
+
+# 构建生产包
+RUN npm run build
+
+# 阶段 2：使用 nginx 提供静态文件
+FROM nginx:alpine AS runner
+
+# 复制自定义 nginx 配置（处理 SPA 路由和 API 代理）
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+# 复制构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

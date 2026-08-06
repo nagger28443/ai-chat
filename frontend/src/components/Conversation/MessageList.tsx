@@ -1,11 +1,14 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { Message } from '../../types';
+import { SCROLL_NEAR_BOTTOM_THRESHOLD } from '../../constants';
 import { MessageItem } from './MessageItem';
 import styles from './MessageList.module.css';
 
 interface MessageListProps {
   messages: Message[];
   isLoading?: boolean;
+  isReconnecting?: boolean;
+  isOperationPending?: boolean;
   hasMore?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
@@ -18,6 +21,8 @@ interface MessageListProps {
 export function MessageList({
   messages,
   isLoading,
+  isReconnecting = false,
+  isOperationPending = false,
   hasMore = false,
   isLoadingMore = false,
   onLoadMore,
@@ -45,9 +50,8 @@ export function MessageList({
     if (!container) return;
 
     const onScroll = () => {
-      const threshold = 50;
       isNearBottomRef.current =
-        container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+        container.scrollHeight - container.scrollTop - container.clientHeight < SCROLL_NEAR_BOTTOM_THRESHOLD;
     };
 
     container.addEventListener('scroll', onScroll);
@@ -148,6 +152,7 @@ export function MessageList({
         <MessageItem
           key={message.id}
           message={message}
+          disabled={isOperationPending}
           onDelete={onDeleteMessage}
           onRegenerate={onRegenerate}
           onEditAndResend={onEditAndResend}
@@ -161,7 +166,7 @@ export function MessageList({
             <span></span>
             <span></span>
           </div>
-          <span>AI 正在思考...</span>
+          <span>{isReconnecting ? '正在重新连接...' : 'AI 正在思考...'}</span>
         </div>
       )}
       <div ref={bottomRef} />

@@ -7,13 +7,15 @@ import styles from './MessageItem.module.css';
 
 interface MessageItemProps {
   message: Message;
+  /** 操作是否被禁用（其他操作正在进行时） */
+  disabled?: boolean;
   onDelete?: (messageId: string) => void;
   onRegenerate?: () => void;
   onEditAndResend?: (messageId: string, newContent: string) => void;
   onRetry?: (messageId: string) => void;
 }
 
-export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend, onRetry }: MessageItemProps) {
+export function MessageItem({ message, disabled, onDelete, onRegenerate, onEditAndResend, onRetry }: MessageItemProps) {
   const isUser = message.role === 'user';
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -80,10 +82,10 @@ export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend, 
                   rows={3}
                 />
                 <div className={styles.editActions}>
-                  <button className={styles.editCancelBtn} onClick={handleEditCancel}>
+                  <button className={styles.editCancelBtn} onClick={handleEditCancel} disabled={disabled}>
                     取消
                   </button>
-                  <button className={styles.editConfirmBtn} onClick={handleEditConfirm}>
+                  <button className={styles.editConfirmBtn} onClick={handleEditConfirm} disabled={disabled}>
                     发送
                   </button>
                 </div>
@@ -112,6 +114,7 @@ export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend, 
               {onRetry && (
                 <button
                   className={styles.retryBtn}
+                  disabled={disabled}
                   onClick={() => onRetry(message.id)}
                 >
                   🔄 重试
@@ -125,6 +128,7 @@ export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend, 
             role={message.role}
             content={message.content}
             visible={isHovered}
+            disabled={disabled}
             onRegenerate={onRegenerate}
             onEdit={isUser ? handleEdit : undefined}
             onDelete={() => onDelete?.(message.id)}

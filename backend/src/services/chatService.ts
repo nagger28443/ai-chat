@@ -1,7 +1,23 @@
 import { v4 as uuidv4 } from 'uuid';
 import { storageService } from './storageService.js';
-import { mockAiService } from './mockAiService.js';
+import { mockAiProvider } from './mockAiService.js';
+import type { AiProvider } from './aiProvider.js';
+import {
+  CACHE_CLEANUP_DELAY_MS,
+  CACHE_POLL_INTERVAL_MS,
+  CHAR_GENERATION_DELAY_MS,
+  RESUME_MAX_WAIT_MS,
+} from '../constants.js';
 import type { Message } from '../types/index.js';
+
+/**
+ * 当前使用的 AI 提供者
+ *
+ * 未来可通过环境变量切换：
+ *   const aiProvider: AiProvider = process.env.AI_PROVIDER === 'openai'
+ *     ? openAiProvider : mockAiProvider;
+ */
+const aiProvider: AiProvider = mockAiProvider;
 
 /**
  * 缓存条目：存储正在生成中的消息状态
@@ -46,33 +62,39 @@ export function getCacheByConversationId(conversationId: string): CacheEntry | u
 }
 
 /**
- * 设置缓存条目
- */
-export function setMessageCache(conversationId: string, entry: CacheEntry): void {
-  messageCache.set(conversationId, entry);
-}
-
-/**
- * 删除缓存条目
- */
-export function deleteMessageCache(conversationId: string): void {
-  messageCache.delete(conversationId);
-}
-
-/**
  * 后台生成任务：独立运行，不受消费者断开影响
  * 逐字符生成内容并更新 cache
+ *
+ * 每个字符生成后检查 abortSignal，被取消时立即停止并清理缓存
  */
 async function runGenerationTask(
   conversationId: string,
   cacheEntry: CacheEntry,
   messages: Message[],
   responseText: string,
+  abortSignal: AbortSignal,
 ): Promise<void> {
   try {
     for (let i = 0; i < responseText.length; i++) {
+      // 检查是否被取消（用户手动中断）
+      if (abortSignal.aborted) {
+        // 用户主动中断：保留已生成内容，标记为 stopped，不继续生成
+        cacheEntry.status = 'error';
+        cacheEntry.error = 'Cancelled by user';
+        const currentMsg = messages.find((m) => m.id === cacheEntry.messageId);
+        if (currentMsg) {
+          currentMsg.content = cacheEntry.content;
+          currentMsg.status = 'stopped';
+          delete currentMsg.originalPrompt;
+          await storageService.saveMessages(conversationId, messages);
+        }
+        // 清理缓存，避免 resumeMessage 续传
+        messageCache.delete(conversationId);
+        generationAbortControllers.delete(conversationId);
+        return;
+      }
       cacheEntry.content += responseText[i];
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => setTimeout(resolve, CHAR_GENERATION_DELAY_MS));
     }
 
     // 生成完成：更新 cache 和 storage
@@ -90,16 +112,37 @@ async function runGenerationTask(
       if (cacheEntry.status === 'completed') {
         messageCache.delete(conversationId);
       }
-    }, 5000);
+      generationAbortControllers.delete(conversationId);
+    }, CACHE_CLEANUP_DELAY_MS);
   } catch (error) {
     cacheEntry.status = 'error';
     cacheEntry.error = error instanceof Error ? error.message : 'Unknown error';
+    generationAbortControllers.delete(conversationId);
+  }
+}
+
+/**
+ * 生成任务的取消控制器注册表
+ *
+ * 客户端断开 SSE 时，通过 conversationId 查找并 abort 对应的生成任务。
+ */
+const generationAbortControllers = new Map<string, AbortController>();
+
+/**
+ * 取消指定会话的生成任务
+ *
+ * 由 chat 路由在客户端断开时调用。用户手动中断 → 完全停止，
+ * 不保留 cache，不自动续传。
+ */
+export function cancelGeneration(conversationId: string): void {
+  const controller = generationAbortControllers.get(conversationId);
+  if (controller) {
+    controller.abort();
   }
 }
 
 /**
  * 从 cache 读取内容的 generator
- * 独立的 generator 只负责从 cache 读取并 yield，不控制生成逻辑
  */
 async function* yieldFromCache(
   cacheEntry: CacheEntry,
@@ -110,8 +153,6 @@ async function* yieldFromCache(
   | { type: 'error'; data: string }
 > {
   let position = startPosition;
-  // 超时保护：防止残留缓存导致无限等待
-  const MAX_WAIT_MS = 60_000;
   const startTime = Date.now();
 
   while (true) {
@@ -135,30 +176,100 @@ async function* yieldFromCache(
     }
 
     // 超时退出
-    if (Date.now() - startTime > MAX_WAIT_MS) {
+    if (Date.now() - startTime > RESUME_MAX_WAIT_MS) {
       yield { type: 'error', data: 'Generation timeout' };
       return;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, CACHE_POLL_INTERVAL_MS));
+  }
+}
+
+/**
+ * SSE 事件联合类型（sendMessage 独有 userMessage/assistantMessageId）
+ */
+export type ChatSSEEvent =
+  | { type: 'userMessage'; data: Message }
+  | { type: 'assistantMessageId'; data: string }
+  | { type: 'chunk'; data: string }
+  | { type: 'done' }
+  | { type: 'error'; data: string };
+
+/**
+ * 启动 AI 生成任务（公共流程）
+ *
+ * 封装 sendMessage / regenerateMessage / editAndResendMessage 的公共步骤：
+ * 1. 创建 assistant 消息占位
+ * 2. 保存到 storage
+ * 3. 创建 cache 条目
+ * 4. 启动后台生成任务
+ * 5. 从 cache 读取并 yield
+ *
+ * @returns 创建的 assistant 消息 ID
+ */
+async function* startGeneration(
+  conversationId: string,
+  messages: Message[],
+  prompt: string,
+): AsyncGenerator<ChatSSEEvent, void, void> {
+  const assistantMessageId = uuidv4();
+  const assistantMessage: Message = {
+    id: assistantMessageId,
+    conversationId,
+    role: 'assistant',
+    content: '',
+    createdAt: new Date().toISOString(),
+    status: 'generating',
+    originalPrompt: prompt,
+  };
+  messages.push(assistantMessage);
+  await storageService.saveMessages(conversationId, messages);
+
+  yield { type: 'assistantMessageId', data: assistantMessageId };
+
+  const cacheEntry: CacheEntry = {
+    messageId: assistantMessageId,
+    conversationId,
+    content: '',
+    status: 'generating',
+    originalPrompt: prompt,
+  };
+  messageCache.set(conversationId, cacheEntry);
+
+  // 注册取消控制器：客户端断开时通过 cancelGeneration 调用 abort
+  const abortController = new AbortController();
+  generationAbortControllers.set(conversationId, abortController);
+
+  const responseText = aiProvider.generateFrom(prompt, 0);
+  runGenerationTask(conversationId, cacheEntry, messages, responseText, abortController.signal);
+
+  yield* yieldFromCache(cacheEntry, 0);
+}
+
+/**
+ * 更新会话元数据（标题、消息数、更新时间）
+ */
+async function touchConversation(conversationId: string, messages: Message[], firstMessageContent?: string): Promise<void> {
+  const conversations = await storageService.getConversations();
+  const conversation = conversations.find((c) => c.id === conversationId);
+  if (conversation) {
+    conversation.updatedAt = new Date().toISOString();
+    conversation.messageCount = messages.length;
+    if (firstMessageContent && messages.length === 2) {
+      conversation.title = firstMessageContent.slice(0, 20) + (firstMessageContent.length > 20 ? '...' : '');
+    }
+    await storageService.saveConversations(conversations);
   }
 }
 
 /**
  * 发送消息（核心业务逻辑）
- * 保存用户消息，创建 assistant 占位，启动后台生成任务，从 cache 读取并发送
+ * 保存用户消息，启动后台生成任务，从 cache 读取并发送
  */
 export async function* sendMessage(
   conversationId: string,
   content: string,
-): AsyncGenerator<
-  | { type: 'userMessage'; data: Message }
-  | { type: 'assistantMessageId'; data: string }
-  | { type: 'chunk'; data: string }
-  | { type: 'done' }
-  | { type: 'error'; data: string }
-> {
-  // 保存用户消息
+): AsyncGenerator<ChatSSEEvent> {
   const userMessage: Message = {
     id: uuidv4(),
     conversationId,
@@ -174,52 +285,9 @@ export async function* sendMessage(
 
   yield { type: 'userMessage', data: userMessage };
 
-  // 获取 AI 响应
-  const responseText = mockAiService.getResponse(content);
+  await touchConversation(conversationId, messages, content);
 
-  const assistantMessageId = uuidv4();
-  const assistantMessage: Message = {
-    id: assistantMessageId,
-    conversationId,
-    role: 'assistant',
-    content: '',
-    createdAt: new Date().toISOString(),
-    status: 'generating',
-    originalPrompt: content,
-  };
-
-  messages.push(assistantMessage);
-  await storageService.saveMessages(conversationId, messages);
-
-  yield { type: 'assistantMessageId', data: assistantMessageId };
-
-  // 创建缓存条目
-  const cacheEntry: CacheEntry = {
-    messageId: assistantMessageId,
-    conversationId,
-    content: '',
-    status: 'generating',
-    originalPrompt: content,
-  };
-  messageCache.set(conversationId, cacheEntry);
-
-  // 更新会话信息
-  const conversations = await storageService.getConversations();
-  const conversation = conversations.find((c) => c.id === conversationId);
-  if (conversation) {
-    conversation.updatedAt = new Date().toISOString();
-    conversation.messageCount = messages.length;
-    if (messages.length === 2) {
-      conversation.title = content.slice(0, 20) + (content.length > 20 ? '...' : '');
-    }
-    await storageService.saveConversations(conversations);
-  }
-
-  // 启动后台生成任务（不等待完成，消费者断开不影响生成）
-  runGenerationTask(conversationId, cacheEntry, messages, responseText);
-
-  // 从 cache 读取并 yield（消费者断开后，后台任务继续运行）
-  yield* yieldFromCache(cacheEntry, 0);
+  yield* startGeneration(conversationId, messages, content);
 }
 
 /**
@@ -227,11 +295,7 @@ export async function* sendMessage(
  */
 export async function* regenerateMessage(
   conversationId: string,
-): AsyncGenerator<
-  | { type: 'chunk'; data: string }
-  | { type: 'done' }
-  | { type: 'error'; data: string }
-> {
+): AsyncGenerator<ChatSSEEvent> {
   const messages = await storageService.getMessages(conversationId);
 
   // 找到最后一条 user 消息
@@ -251,35 +315,9 @@ export async function* regenerateMessage(
   const userMessage = messages[lastUserIndex];
   messages.splice(lastUserIndex + 1);
 
-  const assistantMessageId = uuidv4();
-  const assistantMessage: Message = {
-    id: assistantMessageId,
-    conversationId,
-    role: 'assistant',
-    content: '',
-    createdAt: new Date().toISOString(),
-    status: 'generating',
-    originalPrompt: userMessage.content,
-  };
-  messages.push(assistantMessage);
-  await storageService.saveMessages(conversationId, messages);
+  await touchConversation(conversationId, messages);
 
-  const cacheEntry: CacheEntry = {
-    messageId: assistantMessageId,
-    conversationId,
-    content: '',
-    status: 'generating',
-    originalPrompt: userMessage.content,
-  };
-  messageCache.set(conversationId, cacheEntry);
-
-  const responseText = mockAiService.getResponse(userMessage.content);
-
-  // 启动后台生成任务
-  runGenerationTask(conversationId, cacheEntry, messages, responseText);
-
-  // 从 cache 读取并 yield
-  yield* yieldFromCache(cacheEntry, 0);
+  yield* startGeneration(conversationId, messages, userMessage.content);
 }
 
 /**
@@ -289,11 +327,7 @@ export async function* editAndResendMessage(
   conversationId: string,
   messageId: string,
   newContent: string,
-): AsyncGenerator<
-  | { type: 'chunk'; data: string }
-  | { type: 'done' }
-  | { type: 'error'; data: string }
-> {
+): AsyncGenerator<ChatSSEEvent> {
   const messages = await storageService.getMessages(conversationId);
   const msgIndex = messages.findIndex((m) => m.id === messageId);
 
@@ -305,35 +339,9 @@ export async function* editAndResendMessage(
   messages[msgIndex].content = newContent;
   messages.splice(msgIndex + 1);
 
-  const assistantMessageId = uuidv4();
-  const assistantMessage: Message = {
-    id: assistantMessageId,
-    conversationId,
-    role: 'assistant',
-    content: '',
-    createdAt: new Date().toISOString(),
-    status: 'generating',
-    originalPrompt: newContent,
-  };
-  messages.push(assistantMessage);
-  await storageService.saveMessages(conversationId, messages);
+  await touchConversation(conversationId, messages);
 
-  const cacheEntry: CacheEntry = {
-    messageId: assistantMessageId,
-    conversationId,
-    content: '',
-    status: 'generating',
-    originalPrompt: newContent,
-  };
-  messageCache.set(conversationId, cacheEntry);
-
-  const responseText = mockAiService.getResponse(newContent);
-
-  // 启动后台生成任务
-  runGenerationTask(conversationId, cacheEntry, messages, responseText);
-
-  // 从 cache 读取并 yield
-  yield* yieldFromCache(cacheEntry, 0);
+  yield* startGeneration(conversationId, messages, newContent);
 }
 
 /**
@@ -342,11 +350,7 @@ export async function* editAndResendMessage(
  */
 export async function* resumeMessage(
   conversationId: string,
-): AsyncGenerator<
-  | { type: 'chunk'; data: string }
-  | { type: 'done' }
-  | { type: 'error'; data: string }
-> {
+): AsyncGenerator<ChatSSEEvent> {
   // 1. 优先从 cache 查找（可能正在生成中，或者已完成但未清理）
   const cacheEntry = getCacheByConversationId(conversationId);
 
@@ -367,7 +371,6 @@ export async function* resumeMessage(
 
   // 已完成的对话：直接补发内容
   if (lastMessage.status === 'completed') {
-    // 创建一个临时 cache entry 用于 yield
     const tempCache: CacheEntry = {
       messageId: lastMessage.id,
       conversationId,
@@ -386,8 +389,6 @@ export async function* resumeMessage(
   }
 
   // 场景 C：后端重启或缓存丢失，重新生成
-  const responseText = mockAiService.getResponse(lastMessage.originalPrompt);
-
   const newCacheEntry: CacheEntry = {
     messageId: lastMessage.id,
     conversationId,
@@ -397,9 +398,12 @@ export async function* resumeMessage(
   };
   messageCache.set(conversationId, newCacheEntry);
 
-  // 启动后台生成任务
-  runGenerationTask(conversationId, newCacheEntry, messages, responseText);
+  // 同样注册取消控制器，支持客户端断开时停止
+  const abortController = new AbortController();
+  generationAbortControllers.set(conversationId, abortController);
 
-  // 从 cache 读取并 yield，从位置 0 开始
+  const responseText = aiProvider.generateFrom(lastMessage.originalPrompt, 0);
+  runGenerationTask(conversationId, newCacheEntry, messages, responseText, abortController.signal);
+
   yield* yieldFromCache(newCacheEntry, 0);
 }
