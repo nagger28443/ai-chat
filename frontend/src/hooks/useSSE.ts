@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { api } from '../services/api';
+import { isHttpError } from '../utils/httpError';
 import {
   parseSSEChunk,
   flushRemainingEvent,
@@ -18,6 +19,12 @@ interface UseSSEOptions {
  *
  * SSE 协议解析逻辑委托给纯函数 parseSSEChunk（见 utils/sse.ts），
  * 本 hook 仅负责：流读取 + 事件派发。
+ *
+ * 错误处理：
+ * - HttpError：后端返回的结构化错误，直接使用 message
+ * - TypeError（网络错误/离线）：提供友好的中文提示
+ * - AbortError：用户主动取消，不报错
+ * - 其他错误：使用通用错误消息
  */
 export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -102,7 +109,7 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
    * 1. 创建 AbortController 并绑定 signal
    * 2. 调用 api 方法获取 Response
    * 3. 处理 SSE 流
-   * 4. 统一错误处理（区分 AbortError 和其他错误）
+   * 4. 统一错误处理（区分 AbortError / HttpError / 网络错误）
    *
    * @param apiCall - 接收 signal 并返回 Response 的函数
    */
@@ -116,10 +123,17 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
         await processStream(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          // 用户主动中止
+          // 用户主动中止（切换会话、停止生成、组件卸载）
           console.log('Request aborted by user');
+        } else if (isHttpError(error)) {
+          // 后端返回的结构化 HTTP 错误
+          onError(error.message);
+        } else if (error instanceof TypeError && error.message === 'Failed to fetch') {
+          // 网络错误（离线、CORS、DNS 失败等）
+          onError('网络连接失败，请检查网络后重试');
         } else {
-          onError(error instanceof Error ? error.message : 'Unknown error');
+          // 其他未知错误
+          onError(error instanceof Error ? error.message : '未知错误');
         }
       }
     },

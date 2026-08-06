@@ -1,29 +1,54 @@
 import Router from '@koa/router';
 import * as chatService from '../services/chatService.js';
 import { SSEHelper } from '../utils/sse.js';
-import type {
-  SendMessageInput,
-  ResumeChatInput,
-  RegenerateMessageInput,
-  EditAndResendInput,
-} from '../types/index.js';
+import {
+  sendMessageInputSchema,
+  resumeChatInputSchema,
+  regenerateMessageInputSchema,
+  editAndResendInputSchema,
+  createErrorResponse,
+  type ApiErrorResponse,
+} from '../../../shared/types.js';
 
 const router = new Router();
 
 /**
+ * 返回 400 统一格式错误响应
+ */
+function badRequest(res: import('http').ServerResponse, message: string, details?: unknown) {
+  const body: ApiErrorResponse = createErrorResponse('INVALID_INPUT', message, details);
+  res.statusCode = 400;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify(body));
+}
+
+/**
+ * 处理 zod 校验失败的 details 字段
+ */
+function zodErrorDetails(error: import('zod').ZodError) {
+  return error.issues.map((issue) => ({
+    field: issue.path.join('.'),
+    message: issue.message,
+  }));
+}
+
+/**
  * 对话路由（Koa 风格）
  * SSE 端点通过 ctx.respond = false + ctx.res 绕过 Koa 自动响应
+ *
+ * 所有端点使用 zod schema 校验输入，失败时返回统一错误格式：
+ * { code: 'INVALID_INPUT', message: '...', details: [...] }
  */
 
 // 发送消息（SSE 流式响应）
 router.post('/', async (ctx) => {
-  const { conversationId, content } = ctx.request.body as SendMessageInput;
-
-  if (!conversationId || !content) {
-    ctx.status = 400;
-    ctx.body = { success: false, error: 'Missing required fields' };
+  const result = sendMessageInputSchema.safeParse(ctx.request.body);
+  if (!result.success) {
+    badRequest(ctx.res, 'Invalid input', zodErrorDetails(result.error));
     return;
   }
+
+  const { conversationId, content } = result.data;
 
   // 绕过 Koa 自动响应，直接操作原生 Node Response
   ctx.respond = false;
@@ -83,13 +108,13 @@ router.post('/', async (ctx) => {
 
 // 续传中断的对话（SSE 流式响应）
 router.post('/resume', async (ctx) => {
-  const { conversationId } = ctx.request.body as ResumeChatInput;
-
-  if (!conversationId) {
-    ctx.status = 400;
-    ctx.body = { success: false, error: 'Missing conversationId' };
+  const result = resumeChatInputSchema.safeParse(ctx.request.body);
+  if (!result.success) {
+    badRequest(ctx.res, 'Invalid input', zodErrorDetails(result.error));
     return;
   }
+
+  const { conversationId } = result.data;
 
   ctx.respond = false;
   const res = ctx.res;
@@ -138,13 +163,13 @@ router.post('/resume', async (ctx) => {
 
 // 重新生成最后一条 assistant 回复（SSE 流式响应）
 router.post('/regenerate', async (ctx) => {
-  const { conversationId } = ctx.request.body as RegenerateMessageInput;
-
-  if (!conversationId) {
-    ctx.status = 400;
-    ctx.body = { success: false, error: 'Missing conversationId' };
+  const result = regenerateMessageInputSchema.safeParse(ctx.request.body);
+  if (!result.success) {
+    badRequest(ctx.res, 'Invalid input', zodErrorDetails(result.error));
     return;
   }
+
+  const { conversationId } = result.data;
 
   ctx.respond = false;
   const res = ctx.res;
@@ -193,13 +218,13 @@ router.post('/regenerate', async (ctx) => {
 
 // 编辑用户消息并重新生成回复（SSE 流式响应）
 router.post('/edit-and-resend', async (ctx) => {
-  const { conversationId, messageId, newContent } = ctx.request.body as EditAndResendInput;
-
-  if (!conversationId || !messageId || !newContent) {
-    ctx.status = 400;
-    ctx.body = { success: false, error: 'Missing conversationId, messageId, or newContent' };
+  const result = editAndResendInputSchema.safeParse(ctx.request.body);
+  if (!result.success) {
+    badRequest(ctx.res, 'Invalid input', zodErrorDetails(result.error));
     return;
   }
+
+  const { conversationId, messageId, newContent } = result.data;
 
   ctx.respond = false;
   const res = ctx.res;

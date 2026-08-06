@@ -3,7 +3,13 @@ import { router, publicProcedure } from '../index.js';
 import { v4 as uuidv4 } from 'uuid';
 import { storageService } from '../../services/storageService.js';
 import { getMessageCache } from '../../services/chatService.js';
-import { conversationSchema, messageSchema } from '../../../../shared/types.js';
+import {
+  conversationSchema,
+  messageSchema,
+  MAX_TITLE_LENGTH,
+  PAGINATION_LIMIT_MIN,
+  PAGINATION_LIMIT_MAX,
+} from '../../../../shared/types.js';
 
 /**
  * 会话相关 tRPC procedures
@@ -27,7 +33,7 @@ export const conversationRouter = router({
   create: publicProcedure
     .input(
       z.object({
-        title: z.string().optional(),
+        title: z.string().max(MAX_TITLE_LENGTH).optional(),
       })
     )
     .output(conversationSchema)
@@ -53,7 +59,7 @@ export const conversationRouter = router({
   delete: publicProcedure
     .input(
       z.object({
-        id: z.string(),
+        id: z.string().min(1, 'id is required'),
       })
     )
     .mutation(async ({ input }) => {
@@ -74,8 +80,8 @@ export const conversationRouter = router({
   update: publicProcedure
     .input(
       z.object({
-        id: z.string(),
-        title: z.string().min(1, 'Title is required'),
+        id: z.string().min(1, 'id is required'),
+        title: z.string().min(1, 'Title is required').max(MAX_TITLE_LENGTH, `Title must be at most ${MAX_TITLE_LENGTH} characters`),
       })
     )
     .output(conversationSchema)
@@ -100,9 +106,9 @@ export const conversationRouter = router({
   getMessages: publicProcedure
     .input(
       z.object({
-        conversationId: z.string(),
-        limit: z.number().default(10),
-        offset: z.number().default(0),
+        conversationId: z.string().min(1, 'conversationId is required'),
+        limit: z.number().int().min(PAGINATION_LIMIT_MIN).max(PAGINATION_LIMIT_MAX).default(10),
+        offset: z.number().int().min(0).default(0),
       })
     )
     .output(

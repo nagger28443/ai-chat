@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { Message } from '../../types';
+import { MAX_MESSAGE_LENGTH } from '../../types';
 import { MarkdownRenderer } from '../Common/MarkdownRenderer';
 import { MessageActions } from './MessageActions';
 import styles from './MessageItem.module.css';
@@ -25,7 +26,7 @@ export function MessageItem({ message, onDelete, onRegenerate, onEditAndResend, 
 
   const handleEditConfirm = useCallback(() => {
     const trimmed = editContent.trim();
-    if (trimmed && trimmed !== message.content) {
+    if (trimmed && trimmed !== message.content && trimmed.length <= MAX_MESSAGE_LENGTH) {
       onEditAndResend?.(message.id, trimmed);
     }
     setIsEditing(false);

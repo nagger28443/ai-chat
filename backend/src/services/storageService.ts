@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import type { Conversation, Message } from '../types/index.js';
+import { conversationSchema, messageSchema } from '../../../shared/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,6 +11,45 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const CONVERSATIONS_FILE = path.join(DATA_DIR, 'conversations.json');
 const MESSAGES_DIR = path.join(DATA_DIR, 'messages');
+
+/**
+ * 文件级写锁队列
+ *
+ * 保证同一文件的写操作串行执行，避免并发写入导致的数据损坏。
+ * 使用 Promise 链实现：每次写入等前一次完成后再执行。
+ *
+ * 注意：这只解决进程内的并发问题，不解决多进程/多实例的并发。
+ * 对于多进程场景，需要使用 proper-lockfile 等文件锁。
+ */
+const writeQueues = new Map<string, Promise<void>>();
+
+function enqueueWrite(filePath: string, writeFn: () => Promise<void>): Promise<void> {
+  const prev = writeQueues.get(filePath) ?? Promise.resolve();
+  const next = prev.then(writeFn, writeFn);
+  writeQueues.set(filePath, next);
+  // 队列完成后清理（防止 Map 无限增长）
+  next.finally(() => {
+    if (writeQueues.get(filePath) === next) {
+      writeQueues.delete(filePath);
+    }
+  });
+  return next;
+}
+
+/**
+ * 原子写入文件
+ *
+ * 先写入临时文件（.tmp），再 rename 覆盖目标文件。
+ * rename 在同一文件系统上是原子操作——要么看到旧内容，要么看到新内容，
+ * 不会出现写入一半的中间状态。
+ *
+ * 如果进程在写入 .tmp 时崩溃，目标文件不受影响。
+ */
+async function atomicWriteFile(filePath: string, data: string): Promise<void> {
+  const tmpPath = `${filePath}.tmp`;
+  await fs.writeFile(tmpPath, data, 'utf-8');
+  await fs.rename(tmpPath, filePath);
+}
 
 class StorageService {
   constructor() {
@@ -29,7 +69,7 @@ class StorageService {
       try {
         await fs.access(CONVERSATIONS_FILE);
       } catch {
-        await fs.writeFile(
+        await atomicWriteFile(
           CONVERSATIONS_FILE,
           JSON.stringify({ conversations: [] }, null, 2)
         );
@@ -42,12 +82,27 @@ class StorageService {
 
   /**
    * 读取所有会话
+   * 使用 zod schema 校验数据格式，损坏时返回空数组
    */
   async getConversations(): Promise<Conversation[]> {
     try {
       const data = await fs.readFile(CONVERSATIONS_FILE, 'utf-8');
-      const parsed = JSON.parse(data) as { conversations?: Conversation[] };
-      return parsed.conversations || [];
+      const parsed = JSON.parse(data) as { conversations?: unknown[] };
+      if (!Array.isArray(parsed.conversations)) {
+        console.warn('conversations.json: conversations is not an array');
+        return [];
+      }
+      // 逐条校验，跳过无效条目
+      const valid: Conversation[] = [];
+      for (const item of parsed.conversations) {
+        const result = conversationSchema.safeParse(item);
+        if (result.success) {
+          valid.push(result.data);
+        } else {
+          console.warn('conversations.json: skipping invalid entry', result.error.issues[0]);
+        }
+      }
+      return valid;
     } catch (error) {
       console.error('Failed to read conversations:', error);
       return [];
@@ -55,29 +110,41 @@ class StorageService {
   }
 
   /**
-   * 写入所有会话
+   * 写入所有会话（原子写入 + 串行队列）
    */
   async saveConversations(conversations: Conversation[]): Promise<void> {
-    try {
-      await fs.writeFile(
+    await enqueueWrite(CONVERSATIONS_FILE, async () => {
+      await atomicWriteFile(
         CONVERSATIONS_FILE,
         JSON.stringify({ conversations }, null, 2)
       );
-    } catch (error) {
-      console.error('Failed to save conversations:', error);
-      throw error;
-    }
+    });
   }
 
   /**
    * 读取单个会话的消息
+   * 使用 zod schema 校验数据格式，损坏时返回空数组
    */
   async getMessages(conversationId: string): Promise<Message[]> {
     const filePath = path.join(MESSAGES_DIR, `${conversationId}.json`);
     try {
       const data = await fs.readFile(filePath, 'utf-8');
-      const parsed = JSON.parse(data) as { messages?: Message[] };
-      return parsed.messages || [];
+      const parsed = JSON.parse(data) as { messages?: unknown[] };
+      if (!Array.isArray(parsed.messages)) {
+        console.warn(`${conversationId}.json: messages is not an array`);
+        return [];
+      }
+      // 逐条校验，跳过无效条目
+      const valid: Message[] = [];
+      for (const item of parsed.messages) {
+        const result = messageSchema.safeParse(item);
+        if (result.success) {
+          valid.push(result.data);
+        } else {
+          console.warn(`${conversationId}.json: skipping invalid message`, result.error.issues[0]);
+        }
+      }
+      return valid;
     } catch {
       // 文件不存在，返回空数组
       return [];
@@ -85,19 +152,16 @@ class StorageService {
   }
 
   /**
-   * 写入单个会话的消息
+   * 写入单个会话的消息（原子写入 + 串行队列）
    */
   async saveMessages(conversationId: string, messages: Message[]): Promise<void> {
     const filePath = path.join(MESSAGES_DIR, `${conversationId}.json`);
-    try {
-      await fs.writeFile(
+    await enqueueWrite(filePath, async () => {
+      await atomicWriteFile(
         filePath,
         JSON.stringify({ conversationId, messages }, null, 2)
       );
-    } catch (error) {
-      console.error('Failed to save messages:', error);
-      throw error;
-    }
+    });
   }
 
   /**

@@ -20,7 +20,6 @@
     "@trpc/react-query": "^11.18.0",
     "ahooks": "^3.9.7",
     "highlight.js": "^11.11.1",
-    "jotai": "^2.20.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",

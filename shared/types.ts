@@ -8,6 +8,16 @@
 
 import { z } from 'zod';
 
+// ============ 输入限制常量 ============
+
+/** 消息内容最大长度（字符数） */
+export const MAX_MESSAGE_LENGTH = 10_000;
+/** 会话标题最大长度（字符数） */
+export const MAX_TITLE_LENGTH = 100;
+/** 分页 limit 范围 */
+export const PAGINATION_LIMIT_MIN = 1;
+export const PAGINATION_LIMIT_MAX = 100;
+
 // ============ Zod Schemas（作为唯一数据源） ============
 
 export const conversationSchema = z.object({
@@ -62,27 +72,50 @@ export interface SSEErrorEvent {
 
 export type SSEEvent = SSEMessageEvent | SSEDoneEvent | SSEErrorEvent;
 
-// ============ SSE 端点输入类型 ============
+// ============ 统一错误响应格式 ============
 
-// POST /api/chat - 发送消息
-export interface SendMessageInput {
-  conversationId: string;
-  content: string;
+/**
+ * 后端统一错误响应格式
+ * 所有后端错误（tRPC、SSE、REST）都应返回此格式
+ */
+export interface ApiErrorResponse {
+  /** 机器可读的错误码 */
+  code: string;
+  /** 人可读的错误信息 */
+  message: string;
+  /** 可选的附加信息 */
+  details?: unknown;
 }
 
-// POST /api/chat/resume - 续传中断的对话
-export interface ResumeChatInput {
-  conversationId: string;
+/** 构造统一错误响应的辅助函数 */
+export function createErrorResponse(code: string, message: string, details?: unknown): ApiErrorResponse {
+  return { code, message, ...(details !== undefined ? { details } : {}) };
 }
 
-// POST /api/chat/regenerate - 重新生成回复
-export interface RegenerateMessageInput {
-  conversationId: string;
-}
+// ============ SSE 端点输入 Schema（用于后端路由校验） ============
 
-// POST /api/chat/edit-and-resend - 编辑并重发
-export interface EditAndResendInput {
-  conversationId: string;
-  messageId: string;
-  newContent: string;
-}
+export const sendMessageInputSchema = z.object({
+  conversationId: z.string().min(1, 'conversationId is required'),
+  content: z.string().min(1, 'content is required').max(MAX_MESSAGE_LENGTH, `content must be at most ${MAX_MESSAGE_LENGTH} characters`),
+});
+
+export const resumeChatInputSchema = z.object({
+  conversationId: z.string().min(1, 'conversationId is required'),
+});
+
+export const regenerateMessageInputSchema = z.object({
+  conversationId: z.string().min(1, 'conversationId is required'),
+});
+
+export const editAndResendInputSchema = z.object({
+  conversationId: z.string().min(1, 'conversationId is required'),
+  messageId: z.string().min(1, 'messageId is required'),
+  newContent: z.string().min(1, 'newContent is required').max(MAX_MESSAGE_LENGTH, `newContent must be at most ${MAX_MESSAGE_LENGTH} characters`),
+});
+
+// ============ SSE 端点输入类型（从 schema 推导） ============
+
+export type SendMessageInput = z.infer<typeof sendMessageInputSchema>;
+export type ResumeChatInput = z.infer<typeof resumeChatInputSchema>;
+export type RegenerateMessageInput = z.infer<typeof regenerateMessageInputSchema>;
+export type EditAndResendInput = z.infer<typeof editAndResendInputSchema>;

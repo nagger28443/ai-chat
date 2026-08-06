@@ -4,12 +4,15 @@ import type {
   RegenerateMessageInput,
   EditAndResendInput,
 } from '../types/index.ts';
+import { HttpError } from '../utils/httpError';
 
 const API_BASE_URL = '/api';
 
 /**
  * SSE 流式端点 API
  * REST 端点已迁移到 tRPC hooks（见 lib/trpc.ts）
+ *
+ * 错误处理：所有方法在 !response.ok 时抛出 HttpError（结构化错误）
  */
 class ApiService {
   // ============ SSE 流式端点（使用 fetch） ============
@@ -22,46 +25,14 @@ class ApiService {
     content: string,
     signal?: AbortSignal
   ): Promise<Response> {
-    const url = `${API_BASE_URL}/chat`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ conversationId, content } satisfies SendMessageInput),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response;
+    return this.post(`${API_BASE_URL}/chat`, { conversationId, content } satisfies SendMessageInput, signal);
   }
 
   /**
    * 续传中断的对话（返回 SSE 流）
    */
   async resumeChat(conversationId: string, signal?: AbortSignal): Promise<Response> {
-    const url = `${API_BASE_URL}/chat/resume`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        conversationId,
-      } satisfies ResumeChatInput),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response;
+    return this.post(`${API_BASE_URL}/chat/resume`, { conversationId } satisfies ResumeChatInput, signal);
   }
 
   /**
@@ -71,22 +42,7 @@ class ApiService {
     conversationId: string,
     signal?: AbortSignal
   ): Promise<Response> {
-    const url = `${API_BASE_URL}/chat/regenerate`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ conversationId } satisfies RegenerateMessageInput),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response;
+    return this.post(`${API_BASE_URL}/chat/regenerate`, { conversationId } satisfies RegenerateMessageInput, signal);
   }
 
   /**
@@ -98,23 +54,27 @@ class ApiService {
     newContent: string,
     signal?: AbortSignal
   ): Promise<Response> {
-    const url = `${API_BASE_URL}/chat/edit-and-resend`;
+    return this.post(
+      `${API_BASE_URL}/chat/edit-and-resend`,
+      { conversationId, messageId, newContent } satisfies EditAndResendInput,
+      signal
+    );
+  }
 
+  /**
+   * 通用 POST 请求
+   * 统一处理错误响应：!response.ok 时抛出 HttpError（结构化错误）
+   */
+  private async post(url: string, body: unknown, signal?: AbortSignal): Promise<Response> {
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        conversationId,
-        messageId,
-        newContent,
-      } satisfies EditAndResendInput),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
       signal,
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw await HttpError.fromResponse(response);
     }
 
     return response;

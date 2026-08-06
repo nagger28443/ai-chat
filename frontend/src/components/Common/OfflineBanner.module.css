@@ -1,0 +1,26 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background-color: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid #fcd34d;
+  font-size: 14px;
+  z-index: 1000;
+}
+
+[data-theme='dark'] .banner {
+  background-color: #78350f;
+  color: #fef3c7;
+  border-bottom-color: #92400e;
+}
+
+.icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.text {
+  flex: 1;
+}

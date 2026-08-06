@@ -14,8 +14,8 @@ export const messageRouter = router({
   delete: publicProcedure
     .input(
       z.object({
-        conversationId: z.string(),
-        messageId: z.string(),
+        conversationId: z.string().min(1, 'conversationId is required'),
+        messageId: z.string().min(1, 'messageId is required'),
       })
     )
     .output(

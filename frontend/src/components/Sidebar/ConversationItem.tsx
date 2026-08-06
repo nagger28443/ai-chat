@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Conversation } from '../../types';
+import { MAX_TITLE_LENGTH } from '../../types';
 import { trpc } from '../../lib/trpc';
 import { useSearchParam } from '../../hooks/useSearchParam';
 import { formatRelativeTime } from '../../utils/date';
@@ -88,6 +89,7 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
           ref={inputRef}
           className={styles.editInput}
           value={editTitle}
+          maxLength={MAX_TITLE_LENGTH}
           onChange={(e) => setEditTitle(e.target.value)}
           onBlur={handleSaveTitle}
           onKeyDown={handleKeyDown}
