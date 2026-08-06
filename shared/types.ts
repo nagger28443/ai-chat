@@ -73,7 +73,6 @@ export interface SendMessageInput {
 // POST /api/chat/resume - 续传中断的对话
 export interface ResumeChatInput {
   conversationId: string;
-  frontendContentLength: number;
 }
 
 // POST /api/chat/regenerate - 重新生成回复

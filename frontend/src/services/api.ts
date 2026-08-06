@@ -38,7 +38,7 @@ class ApiService {
   /**
    * 续传中断的对话（返回 SSE 流）
    */
-  async resumeChat(conversationId: string, frontendContentLength: number): Promise<Response> {
+  async resumeChat(conversationId: string): Promise<Response> {
     const url = `${API_BASE_URL}/chat/resume`;
 
     const response = await fetch(url, {
@@ -48,7 +48,6 @@ class ApiService {
       },
       body: JSON.stringify({
         conversationId,
-        frontendContentLength,
       } satisfies ResumeChatInput),
     });
 

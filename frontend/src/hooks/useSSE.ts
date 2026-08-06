@@ -154,11 +154,11 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
    * 续传中断的对话
    */
   const resumeStream = useCallback(
-    async (conversationId: string, frontendContentLength: number) => {
+    async (conversationId: string) => {
       abortControllerRef.current = new AbortController();
 
       try {
-        const response = await api.resumeChat(conversationId, frontendContentLength);
+        const response = await api.resumeChat(conversationId);
         await processStream(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {

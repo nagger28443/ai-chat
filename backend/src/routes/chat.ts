@@ -83,7 +83,7 @@ router.post('/', async (ctx) => {
 
 // 续传中断的对话（SSE 流式响应）
 router.post('/resume', async (ctx) => {
-  const { conversationId, frontendContentLength = 0 } = ctx.request.body as ResumeChatInput;
+  const { conversationId } = ctx.request.body as ResumeChatInput;
 
   if (!conversationId) {
     ctx.status = 400;
@@ -109,7 +109,7 @@ router.post('/resume', async (ctx) => {
   });
 
   try {
-    for await (const event of chatService.resumeMessage(conversationId, frontendContentLength)) {
+    for await (const event of chatService.resumeMessage(conversationId)) {
       if (clientDisconnected || res.writableEnded) break;
 
       switch (event.type) {

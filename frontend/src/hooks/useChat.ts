@@ -55,8 +55,8 @@ export function useChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
 
-  // 记录已安排自动续传的会话 ID
-  const scheduledResumeRef = useRef<string | null>(null);
+  // 记录当前正在续传的会话 ID（有活跃的 SSE 连接）
+  const resumingConversationsRef = useRef<Set<string>>(new Set());
   // 用 ref 保存最新的 messages，避免 useEffect 闭包过期问题
   const messagesRef = useRef<Message[]>(allMessages);
   messagesRef.current = allMessages;
@@ -94,6 +94,10 @@ export function useChat() {
     setIsStreaming(false);
     setStreamingMessageId(null);
     contentRef.current = '';
+    // 从续传集合中移除（续传已完成）
+    if (currentConversationId) {
+      resumingConversationsRef.current.delete(currentConversationId);
+    }
     // 刷新会话列表以更新标题和消息数
     utils.conversation.getAll.invalidate();
     // 刷新消息列表以获取最新状态
@@ -110,6 +114,10 @@ export function useChat() {
     setIsStreaming(false);
     setStreamingMessageId(null);
     contentRef.current = '';
+    // 从续传集合中移除（续传出错）
+    if (currentConversationId) {
+      resumingConversationsRef.current.delete(currentConversationId);
+    }
   });
 
   const {
@@ -128,14 +136,16 @@ export function useChat() {
   useEffect(() => {
     // 中止当前的 SSE 连接
     abort();
+    // 将当前会话从续传集合中移除（因为连接已断开）
+    if (currentConversationId) {
+      resumingConversationsRef.current.delete(currentConversationId);
+    }
     // 重置流式状态
     setIsStreaming(false);
     setStreamingMessageId(null);
     contentRef.current = '';
     // 重置分页
     setOffset(0);
-    // 重置自动续传标记（允许新会话触发续传检查）
-    scheduledResumeRef.current = null;
   }, [currentConversationId, abort]);
 
   const sendMessage = useMemoizedFn(async (content: string) => {
@@ -191,18 +201,18 @@ export function useChat() {
     setStreamingMessageId(interruptedMsg.id);
     setIsStreaming(true);
 
-    // 将 contentRef 同步为前端已有的内容
-    contentRef.current = interruptedMsg.content;
+    // 重置 contentRef，后端会从位置 0 开始发送所有内容
+    contentRef.current = '';
 
     // 更新本地状态
     setAllMessages((prev) =>
       prev.map((msg) =>
-        msg.id === interruptedMsg.id ? { ...msg, status: 'streaming' as const } : msg
+        msg.id === interruptedMsg.id ? { ...msg, status: 'streaming' as const, content: '' } : msg
       )
     );
 
-    // 传入前端当前内容长度，后端只发送增量内容
-    await resumeStream(currentConversationId, interruptedMsg.content.length);
+    // 后端会从位置 0 开始发送所有缓存内容
+    await resumeStream(currentConversationId);
   });
 
   /**
@@ -220,9 +230,8 @@ export function useChat() {
     if (!currentConversationId) return;
     if (isStreamingRef.current) return;
 
-    // 防止重复调度
-    if (scheduledResumeRef.current === currentConversationId) return;
-    scheduledResumeRef.current = currentConversationId;
+    // 防止重复调度：检查是否已经有活跃的 SSE 连接
+    if (resumingConversationsRef.current.has(currentConversationId)) return;
 
     // 直接从 messagesData 中查找中断的消息（不依赖 allMessages，避免时序问题）
     const messages = messagesData.messages;
@@ -231,6 +240,8 @@ export function useChat() {
     );
 
     if (interruptedMsg) {
+      // 标记这个会话正在续传
+      resumingConversationsRef.current.add(currentConversationId);
       // 需要先更新 allMessages 状态（后端已按时间顺序排列）
       // 使用 spread 创建副本，因为 tRPC 推断的类型是 readonly
       const newMessages = [...messagesData.messages];

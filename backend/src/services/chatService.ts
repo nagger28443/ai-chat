@@ -338,10 +338,10 @@ export async function* editAndResendMessage(
 
 /**
  * 续传中断的对话
+ * 从位置 0 开始发送所有缓存内容，前端负责替换本地状态
  */
 export async function* resumeMessage(
   conversationId: string,
-  frontendContentLength: number,
 ): AsyncGenerator<
   | { type: 'chunk'; data: string }
   | { type: 'done' }
@@ -351,10 +351,8 @@ export async function* resumeMessage(
   const cacheEntry = getCacheByConversationId(conversationId);
 
   if (cacheEntry) {
-    // 场景 A/B：cache 存在，直接从 cache 读取
-    // 如果生成已完成，会立即 yield done
-    // 如果生成还在进行，会等待并持续 yield
-    yield* yieldFromCache(cacheEntry, frontendContentLength);
+    // 场景 A/B：cache 存在，从位置 0 开始发送所有内容
+    yield* yieldFromCache(cacheEntry, 0);
     return;
   }
 
@@ -377,7 +375,7 @@ export async function* resumeMessage(
       status: 'completed',
       originalPrompt: '',
     };
-    yield* yieldFromCache(tempCache, frontendContentLength);
+    yield* yieldFromCache(tempCache, 0);
     return;
   }
 
@@ -402,6 +400,6 @@ export async function* resumeMessage(
   // 启动后台生成任务
   runGenerationTask(conversationId, newCacheEntry, messages, responseText);
 
-  // 从 cache 读取并 yield
-  yield* yieldFromCache(newCacheEntry, frontendContentLength);
+  // 从 cache 读取并 yield，从位置 0 开始
+  yield* yieldFromCache(newCacheEntry, 0);
 }
