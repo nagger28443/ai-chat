@@ -134,9 +134,10 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
   const sendMessage = useCallback(
     async (conversationId: string, content: string) => {
       abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
 
       try {
-        const response = await api.sendMessage(conversationId, content);
+        const response = await api.sendMessage(conversationId, content, signal);
         await processStream(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
@@ -156,9 +157,10 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
   const resumeStream = useCallback(
     async (conversationId: string) => {
       abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
 
       try {
-        const response = await api.resumeChat(conversationId);
+        const response = await api.resumeChat(conversationId, signal);
         await processStream(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
@@ -177,9 +179,10 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
   const regenerateStream = useCallback(
     async (conversationId: string) => {
       abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
 
       try {
-        const response = await api.regenerateMessage(conversationId);
+        const response = await api.regenerateMessage(conversationId, signal);
         await processStream(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
@@ -198,9 +201,15 @@ export function useSSE({ onMessage, onDone, onError }: UseSSEOptions) {
   const editAndResendStream = useCallback(
     async (conversationId: string, messageId: string, newContent: string) => {
       abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
 
       try {
-        const response = await api.editAndResendMessage(conversationId, messageId, newContent);
+        const response = await api.editAndResendMessage(
+          conversationId,
+          messageId,
+          newContent,
+          signal
+        );
         await processStream(response);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {

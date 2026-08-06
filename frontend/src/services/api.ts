@@ -17,7 +17,11 @@ class ApiService {
   /**
    * 发送消息（返回 SSE 流）
    */
-  async sendMessage(conversationId: string, content: string): Promise<Response> {
+  async sendMessage(
+    conversationId: string,
+    content: string,
+    signal?: AbortSignal
+  ): Promise<Response> {
     const url = `${API_BASE_URL}/chat`;
 
     const response = await fetch(url, {
@@ -26,6 +30,7 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ conversationId, content } satisfies SendMessageInput),
+      signal,
     });
 
     if (!response.ok) {
@@ -38,7 +43,7 @@ class ApiService {
   /**
    * 续传中断的对话（返回 SSE 流）
    */
-  async resumeChat(conversationId: string): Promise<Response> {
+  async resumeChat(conversationId: string, signal?: AbortSignal): Promise<Response> {
     const url = `${API_BASE_URL}/chat/resume`;
 
     const response = await fetch(url, {
@@ -49,6 +54,7 @@ class ApiService {
       body: JSON.stringify({
         conversationId,
       } satisfies ResumeChatInput),
+      signal,
     });
 
     if (!response.ok) {
@@ -61,7 +67,10 @@ class ApiService {
   /**
    * 重新生成最后一条 assistant 回复（返回 SSE 流）
    */
-  async regenerateMessage(conversationId: string): Promise<Response> {
+  async regenerateMessage(
+    conversationId: string,
+    signal?: AbortSignal
+  ): Promise<Response> {
     const url = `${API_BASE_URL}/chat/regenerate`;
 
     const response = await fetch(url, {
@@ -70,6 +79,7 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ conversationId } satisfies RegenerateMessageInput),
+      signal,
     });
 
     if (!response.ok) {
@@ -85,7 +95,8 @@ class ApiService {
   async editAndResendMessage(
     conversationId: string,
     messageId: string,
-    newContent: string
+    newContent: string,
+    signal?: AbortSignal
   ): Promise<Response> {
     const url = `${API_BASE_URL}/chat/edit-and-resend`;
 
@@ -99,6 +110,7 @@ class ApiService {
         messageId,
         newContent,
       } satisfies EditAndResendInput),
+      signal,
     });
 
     if (!response.ok) {

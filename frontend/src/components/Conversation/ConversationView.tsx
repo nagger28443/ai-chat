@@ -1,21 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAtom } from 'jotai';
 import { v4 as uuidv4 } from 'uuid';
-import { useSSE } from './useSSE';
-import type { Message } from '../types';
 import { useMemoizedFn } from 'ahooks';
-import { trpc } from '../lib/trpc';
-import { currentConversationIdAtom } from '../atoms/conversation';
+import { trpc } from '../../lib/trpc';
+import { useSSE } from '../../hooks/useSSE';
+import type { Message } from '../../types';
+import { MessageList } from './MessageList';
+import { InputArea } from './InputArea';
+import styles from './ConversationView.module.css';
 
 const PAGE_SIZE = 10;
 
+interface ConversationViewProps {
+  conversationId: string | null;
+}
+
 /**
- * Chat Hook - 管理对话逻辑
+ * ConversationView - 会话视图组件
+ * 接收 conversationId 作为 prop，内部管理所有 chat 逻辑
  * 使用 tRPC + react-query 管理 API 数据
  * 使用 React state 管理流式状态
  */
-export function useChat() {
-  const [currentConversationId] = useAtom(currentConversationIdAtom);
+export function ConversationView({ conversationId }: ConversationViewProps) {
   const utils = trpc.useUtils();
 
   // 分页状态
@@ -24,10 +29,10 @@ export function useChat() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // 消息列表：使用 useQuery
-  const { data: messagesData, isLoading } = trpc.conversation.getMessages.useQuery(
-    { conversationId: currentConversationId!, limit: PAGE_SIZE, offset },
+  const { data: messagesData } = trpc.conversation.getMessages.useQuery(
+    { conversationId: conversationId!, limit: PAGE_SIZE, offset },
     {
-      enabled: !!currentConversationId,
+      enabled: !!conversationId,
     }
   );
 
@@ -95,8 +100,8 @@ export function useChat() {
     setStreamingMessageId(null);
     contentRef.current = '';
     // 从续传集合中移除（续传已完成）
-    if (currentConversationId) {
-      resumingConversationsRef.current.delete(currentConversationId);
+    if (conversationId) {
+      resumingConversationsRef.current.delete(conversationId);
     }
     // 刷新会话列表以更新标题和消息数
     utils.conversation.getAll.invalidate();
@@ -115,8 +120,8 @@ export function useChat() {
     setStreamingMessageId(null);
     contentRef.current = '';
     // 从续传集合中移除（续传出错）
-    if (currentConversationId) {
-      resumingConversationsRef.current.delete(currentConversationId);
+    if (conversationId) {
+      resumingConversationsRef.current.delete(conversationId);
     }
   });
 
@@ -137,8 +142,8 @@ export function useChat() {
     // 中止当前的 SSE 连接
     abort();
     // 将当前会话从续传集合中移除（因为连接已断开）
-    if (currentConversationId) {
-      resumingConversationsRef.current.delete(currentConversationId);
+    if (conversationId) {
+      resumingConversationsRef.current.delete(conversationId);
     }
     // 重置流式状态
     setIsStreaming(false);
@@ -146,15 +151,15 @@ export function useChat() {
     contentRef.current = '';
     // 重置分页
     setOffset(0);
-  }, [currentConversationId, abort]);
+  }, [conversationId]);
 
   const sendMessage = useMemoizedFn(async (content: string) => {
-    if (!currentConversationId || isStreamingRef.current) return;
+    if (!conversationId || isStreamingRef.current) return;
 
     // 添加用户消息
     const userMessage: Message = {
       id: uuidv4(),
-      conversationId: currentConversationId,
+      conversationId: conversationId,
       role: 'user',
       content,
       createdAt: new Date().toISOString(),
@@ -164,7 +169,7 @@ export function useChat() {
     // 添加 AI 消息（占位）
     const assistantMessage: Message = {
       id: uuidv4(),
-      conversationId: currentConversationId,
+      conversationId: conversationId,
       role: 'assistant',
       content: '',
       createdAt: new Date().toISOString(),
@@ -179,7 +184,7 @@ export function useChat() {
     contentRef.current = '';
 
     // 发送 SSE 请求
-    await sendSSERequest(currentConversationId, content);
+    await sendSSERequest(conversationId, content);
   });
 
   /**
@@ -187,7 +192,7 @@ export function useChat() {
    * @param targetMsg 可选，直接传入要续传的消息（避免依赖 messagesRef 的时序问题）
    */
   const resumeConversation = useMemoizedFn(async (targetMsg?: Message) => {
-    if (!currentConversationId || isStreamingRef.current) return;
+    if (!conversationId || isStreamingRef.current) return;
 
     // 找到中断的消息：优先使用传入的参数，否则从 messagesRef 中查找
     const interruptedMsg =
@@ -212,7 +217,7 @@ export function useChat() {
     );
 
     // 后端会从位置 0 开始发送所有缓存内容
-    await resumeStream(currentConversationId);
+    await resumeStream(conversationId);
   });
 
   /**
@@ -227,11 +232,11 @@ export function useChat() {
     prevDataRef.current = messagesData;
 
     if (!messagesData) return;
-    if (!currentConversationId) return;
+    if (!conversationId) return;
     if (isStreamingRef.current) return;
 
     // 防止重复调度：检查是否已经有活跃的 SSE 连接
-    if (resumingConversationsRef.current.has(currentConversationId)) return;
+    if (resumingConversationsRef.current.has(conversationId)) return;
 
     // 直接从 messagesData 中查找中断的消息（不依赖 allMessages，避免时序问题）
     const messages = messagesData.messages;
@@ -241,7 +246,7 @@ export function useChat() {
 
     if (interruptedMsg) {
       // 标记这个会话正在续传
-      resumingConversationsRef.current.add(currentConversationId);
+      resumingConversationsRef.current.add(conversationId);
       // 需要先更新 allMessages 状态（后端已按时间顺序排列）
       // 使用 spread 创建副本，因为 tRPC 推断的类型是 readonly
       const newMessages = [...messagesData.messages];
@@ -249,7 +254,7 @@ export function useChat() {
       // 然后触发续传，直接传入找到的消息（避免时序问题）
       resumeConversation(interruptedMsg);
     }
-  }, [messagesData, currentConversationId, resumeConversation]);
+  }, [messagesData, conversationId, resumeConversation]);
 
   const stopStreaming = useMemoizedFn(() => {
     abort();
@@ -284,8 +289,8 @@ export function useChat() {
   });
 
   const deleteMessage = useMemoizedFn((messageId: string) => {
-    if (currentConversationId) {
-      deleteMessageMutation.mutate({ conversationId: currentConversationId, messageId });
+    if (conversationId) {
+      deleteMessageMutation.mutate({ conversationId: conversationId, messageId });
     }
   });
 
@@ -293,7 +298,7 @@ export function useChat() {
    * 重新生成最后一条 assistant 回复
    */
   const regenerate = useMemoizedFn(async () => {
-    if (!currentConversationId || isStreamingRef.current) return;
+    if (!conversationId || isStreamingRef.current) return;
 
     // 找到最后一条 user 消息
     let lastUserIdx = -1;
@@ -309,7 +314,7 @@ export function useChat() {
     // 移除 lastUserIdx 之后的所有消息，并添加新的占位消息
     const assistantMessage: Message = {
       id: uuidv4(),
-      conversationId: currentConversationId,
+      conversationId: conversationId,
       role: 'assistant',
       content: '',
       createdAt: new Date().toISOString(),
@@ -325,14 +330,14 @@ export function useChat() {
     contentRef.current = '';
 
     // 发起 regenerate SSE 请求
-    await regenerateStream(currentConversationId);
+    await regenerateStream(conversationId);
   });
 
   /**
    * 编辑用户消息并重新生成回复
    */
   const editAndResend = useMemoizedFn(async (messageId: string, newContent: string) => {
-    if (!currentConversationId || isStreamingRef.current) return;
+    if (!conversationId || isStreamingRef.current) return;
 
     const msgIndex = allMessages.findIndex((m) => m.id === messageId);
     if (msgIndex === -1) return;
@@ -340,7 +345,7 @@ export function useChat() {
     // 创建占位 assistant 消息
     const assistantMessage: Message = {
       id: uuidv4(),
-      conversationId: currentConversationId,
+      conversationId: conversationId,
       role: 'assistant',
       content: '',
       createdAt: new Date().toISOString(),
@@ -360,19 +365,26 @@ export function useChat() {
     contentRef.current = '';
 
     // 发起 edit-and-resend SSE 请求
-    await editAndResendStream(currentConversationId, messageId, newContent);
+    await editAndResendStream(conversationId, messageId, newContent);
   });
 
-  return {
-    messages: allMessages,
-    isStreaming,
-    sendMessage,
-    stopStreaming,
-    hasMore,
-    isLoadingMore,
-    loadMoreMessages,
-    deleteMessage,
-    regenerate,
-    editAndResend,
-  };
+  if (!conversationId) {
+    return null;
+  }
+
+  return (
+    <div className={styles.conversationView}>
+      <MessageList
+        messages={allMessages}
+        isLoading={isStreaming}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={loadMoreMessages}
+        onDeleteMessage={deleteMessage}
+        onRegenerate={regenerate}
+        onEditAndResend={editAndResend}
+      />
+      <InputArea onSend={sendMessage} onStop={stopStreaming} isLoading={isStreaming} />
+    </div>
+  );
 }
