@@ -131,8 +131,15 @@ const generationAbortControllers = new Map<string, AbortController>();
 /**
  * 取消指定会话的生成任务
  *
- * 由 chat 路由在客户端断开时调用。用户手动中断 → 完全停止，
- * 不保留 cache，不自动续传。
+ * 由前端在用户点击"停止"时显式调用。
+ * 调用后：
+ * - 后台生成任务在下一个字符迭代时检测到 abort 信号
+ * - 保留已生成内容，标记消息为 'stopped'
+ * - 清理 cache，不再续传
+ *
+ * 注意：SSE 连接断开不会触发此函数（网络断开应保留续传能力）。
+ *
+ * @param conversationId - 要取消的会话 ID
  */
 export function cancelGeneration(conversationId: string): void {
   const controller = generationAbortControllers.get(conversationId);
@@ -264,7 +271,16 @@ async function touchConversation(conversationId: string, messages: Message[], fi
 
 /**
  * 发送消息（核心业务逻辑）
- * 保存用户消息，启动后台生成任务，从 cache 读取并发送
+ *
+ * 流程：
+ * 1. 创建并保存用户消息
+ * 2. yield userMessage 事件（通知前端用户消息已保存）
+ * 3. 更新会话元数据（标题、消息数）
+ * 4. 启动后台生成任务，从 cache 读取并 yield 流式内容
+ *
+ * @param conversationId - 会话 ID
+ * @param content - 用户消息内容
+ * @yields ChatSSEEvent 事件流（userMessage → assistantMessageId → chunk* → done|error）
  */
 export async function* sendMessage(
   conversationId: string,
@@ -292,6 +308,14 @@ export async function* sendMessage(
 
 /**
  * 重新生成最后一条 assistant 回复
+ *
+ * 流程：
+ * 1. 找到最后一条 user 消息
+ * 2. 截断其后的所有消息（删除旧的 assistant 回复）
+ * 3. 启动新的生成任务
+ *
+ * @param conversationId - 会话 ID
+ * @yields ChatSSEEvent 事件流
  */
 export async function* regenerateMessage(
   conversationId: string,
@@ -322,6 +346,16 @@ export async function* regenerateMessage(
 
 /**
  * 编辑用户消息并重新生成回复
+ *
+ * 流程：
+ * 1. 找到指定的用户消息并更新其内容
+ * 2. 截断该消息之后的所有消息
+ * 3. 基于新内容启动生成任务
+ *
+ * @param conversationId - 会话 ID
+ * @param messageId - 要编辑的用户消息 ID
+ * @param newContent - 新的消息内容
+ * @yields ChatSSEEvent 事件流
  */
 export async function* editAndResendMessage(
   conversationId: string,
@@ -346,7 +380,14 @@ export async function* editAndResendMessage(
 
 /**
  * 续传中断的对话
- * 从位置 0 开始发送所有缓存内容，前端负责替换本地状态
+ *
+ * 三种场景：
+ * - A: cache 命中且生成中 → 从 cache 位置 0 发送（前端负责替换本地状态）
+ * - B: cache 命中且已完成 → 直接补发内容
+ * - C: cache 未命中（后端重启/缓存丢失）→ 从 storage 恢复 originalPrompt，重新生成
+ *
+ * @param conversationId - 会话 ID
+ * @yields ChatSSEEvent 事件流
  */
 export async function* resumeMessage(
   conversationId: string,

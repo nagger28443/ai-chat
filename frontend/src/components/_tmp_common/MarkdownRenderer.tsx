@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { renderStreamingMarkdown } from '../../utils/renderStreamingMarkdown';
+import { safeUrlTransform } from '../../utils/safeUrlTransform';
 import styles from './MarkdownRenderer.module.css';
 
 interface MarkdownRendererProps {
@@ -20,6 +21,7 @@ export function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
+        urlTransform={safeUrlTransform}
       >
         {processedContent}
       </ReactMarkdown>

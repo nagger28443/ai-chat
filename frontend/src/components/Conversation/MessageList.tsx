@@ -4,17 +4,37 @@ import { SCROLL_NEAR_BOTTOM_THRESHOLD } from '../../constants';
 import { MessageItem } from './MessageItem';
 import styles from './MessageList.module.css';
 
+/**
+ * 消息列表组件
+ *
+ * 渲染消息列表，支持：
+ * - 自动滚动到最新消息
+ * - 向上滚动加载更多历史消息
+ * - 断线重连提示
+ * - 操作期间禁用交互按钮
+ */
 interface MessageListProps {
+  /** 当前消息列表 */
   messages: Message[];
+  /** 是否正在加载初始消息 */
   isLoading?: boolean;
+  /** 是否正在断线重连（显示提示条） */
   isReconnecting?: boolean;
+  /** 是否有操作进行中（禁用消息操作按钮） */
   isOperationPending?: boolean;
+  /** 是否还有更旧的消息 */
   hasMore?: boolean;
+  /** 是否正在加载更多 */
   isLoadingMore?: boolean;
+  /** 加载更多历史消息的回调 */
   onLoadMore?: () => void;
+  /** 删除消息的回调 */
   onDeleteMessage?: (messageId: string) => void;
+  /** 重新生成最后一条 AI 回复的回调 */
   onRegenerate?: () => void;
+  /** 编辑用户消息并重新生成的回调 */
   onEditAndResend?: (messageId: string, newContent: string) => void;
+  /** 重试失败消息的回调 */
   onRetry?: (messageId: string) => void;
 }
 

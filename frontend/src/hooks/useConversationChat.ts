@@ -21,6 +21,24 @@ interface UseConversationChatOptions {
  * - SSE 连接生命周期管理
  *
  * 纯 hook，不依赖全局状态，可测试、可复用。
+ *
+ * @param options.conversationId - 当前会话 ID，null 表示空状态（未选中会话）
+ * @returns 会话交互所需的完整状态与操作方法
+ *
+ * @example
+ * ```tsx
+ * const {
+ *   messages,          // 当前消息列表
+ *   isStreaming,       // 是否正在流式接收
+ *   isOperationPending,// 是否有任何操作进行中（用于禁用按钮）
+ *   sendMessage,       // 发送新消息
+ *   stopStreaming,     // 停止当前流式接收
+ *   regenerate,        // 重新生成最后一条 AI 回复
+ *   editAndResend,     // 编辑用户消息并重新生成
+ *   retryMessage,      // 重试失败的消息
+ *   deleteMessage,     // 删除消息（乐观更新）
+ * } = useConversationChat({ conversationId });
+ * ```
  */
 export function useConversationChat({ conversationId }: UseConversationChatOptions) {
   const utils = trpc.useUtils();
@@ -191,6 +209,8 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
     contentRef.current = '';
     // 释放操作锁（abort 后 executeStream 直接返回，不会走到 onDone/onError 释放）
     operationInFlightRef.current = false;
+    // 清理重试动作映射（防止旧会话的重试回调泄漏到新会话）
+    retryActionsRef.current.clear();
     // 重置分页
     setOffset(0);
   }, [conversationId, abort]);
@@ -499,18 +519,44 @@ export function useConversationChat({ conversationId }: UseConversationChatOptio
   });
 
   return {
+    /** 当前消息列表（按时间顺序，旧→新） */
     messages: allMessages,
+    /** 是否正在流式接收 AI 回复 */
     isStreaming,
+    /** 是否正在断线重连 */
     isReconnecting,
+    /** 是否有任何操作进行中（SSE 流或 mutation），用于 UI disabled 状态 */
     isOperationPending: isStreaming || deleteMessageMutation.isPending,
+    /** 是否还有更旧的消息可加载 */
     hasMore,
+    /** 是否正在加载更旧的消息 */
     isLoadingMore,
+    /**
+     * 发送新消息
+     * @param content - 用户消息内容
+     */
     sendMessage,
+    /** 停止当前流式接收（用户主动中断） */
     stopStreaming,
+    /** 加载更旧的消息（分页） */
     loadMoreMessages,
+    /**
+     * 删除消息（乐观更新，失败时自动回滚）
+     * @param messageId - 要删除的消息 ID
+     */
     deleteMessage,
+    /** 重新生成最后一条 AI 回复（删除当前回复并重新生成） */
     regenerate,
+    /**
+     * 编辑用户消息并重新生成 AI 回复
+     * @param messageId - 用户消息 ID
+     * @param newContent - 新的消息内容
+     */
     editAndResend,
+    /**
+     * 重试失败的消息操作
+     * @param messageId - 失败的消息 ID
+     */
     retryMessage,
   };
 }

@@ -6,12 +6,17 @@ import { MessageActions } from './MessageActions';
 import styles from './MessageItem.module.css';
 
 interface MessageItemProps {
+  /** 消息数据 */
   message: Message;
   /** 操作是否被禁用（其他操作正在进行时） */
   disabled?: boolean;
+  /** 删除消息的回调 */
   onDelete?: (messageId: string) => void;
+  /** 重新生成 AI 回复的回调 */
   onRegenerate?: () => void;
+  /** 编辑并重发的回调 */
   onEditAndResend?: (messageId: string, newContent: string) => void;
+  /** 重试失败消息的回调 */
   onRetry?: (messageId: string) => void;
 }
 
