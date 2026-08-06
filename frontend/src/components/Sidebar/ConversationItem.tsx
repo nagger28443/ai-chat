@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Conversation } from '../../types';
 import { MAX_TITLE_LENGTH } from '../../types';
 import { trpc } from '../../lib/trpc';
-import { useSearchParam } from '../../hooks/useSearchParam';
 import { formatRelativeTime } from '../../utils/date';
 import styles from './ConversationItem.module.css';
 
@@ -15,8 +15,7 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(conversation.title);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const [, setCurrentConversationId] = useSearchParam('conversationId');
+  const navigate = useNavigate();
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.conversation.delete.useMutation({
@@ -42,7 +41,7 @@ export function ConversationItem({ conversation, isActive }: ConversationItemPro
 
   const handleClick = () => {
     if (!isEditing) {
-      setCurrentConversationId(conversation.id);
+      navigate(`/conversation/${conversation.id}`);
     }
   };
 
