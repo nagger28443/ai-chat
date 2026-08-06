@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Theme } from '../../types';
-import { ThemeToggle } from '../Common/ThemeToggle';
+import { ThemeToggle } from '../common/ThemeToggle';
 import styles from './Layout.module.css';
 
 interface LayoutProps {

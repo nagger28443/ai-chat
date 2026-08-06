@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { Message } from '../../types';
 import { MAX_MESSAGE_LENGTH } from '../../types';
-import { MarkdownRenderer } from '../Common/MarkdownRenderer';
+import { MarkdownRenderer } from '../common/MarkdownRenderer';
 import { MessageActions } from './MessageActions';
 import styles from './MessageItem.module.css';
 
